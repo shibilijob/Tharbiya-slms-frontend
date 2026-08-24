@@ -17,12 +17,81 @@ import {
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
 
+import { api } from '../../lib/axios';
+
 export const QuranHifzTeacherView: React.FC = () => {
   const { user } = useAuth();
   const { students, quranRecords, updateQuranProgress } = useData();
   const { showToast, pushNotification } = useNotifications();
 
-  const teacherStudents = students.filter(s => s.class === '5' || s.class === '6');
+  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    api.get<any>('/faculty-members')
+      .then(res => {
+        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(teachers) && teachers.length > 0) {
+          const matched = teachers.find((t: any) =>
+            (user?.id && (t.id === user.id || t._id === user.id)) ||
+            (user?.email && t.email === user.email) ||
+            (user?.phone && t.phone === user.phone) ||
+            (user?.name && t.name && (
+              t.name.toLowerCase() === user.name.toLowerCase() ||
+              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
+              user.name.toLowerCase().includes(t.name.toLowerCase())
+            ))
+          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
+
+          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
+            const classes = matched.assignedClasses
+              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+              .filter(Boolean);
+            if (classes.length > 0) {
+              setDynamicClasses(classes);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Dynamic assigned classes for this Muallim
+  const teacherUser = user as any;
+  const teacherClasses = React.useMemo(() => {
+    if (dynamicClasses.length > 0) return dynamicClasses;
+
+    let rawList: any[] = [];
+    if (Array.isArray(teacherUser?.assignedClasses)) {
+      rawList = teacherUser.assignedClasses;
+    } else if (typeof teacherUser?.assignedClasses === 'string') {
+      try {
+        const parsed = JSON.parse(teacherUser.assignedClasses);
+        rawList = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        rawList = [teacherUser.assignedClasses];
+      }
+    } else if (teacherUser?.assignedClass) {
+      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+    }
+
+    const cleaned = rawList
+      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+      .filter(Boolean);
+
+    if (cleaned.length > 0) return cleaned;
+
+    const fromStudents = students
+      .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
+      .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
+    const unique = Array.from(new Set(fromStudents)).filter(Boolean);
+    return unique.length > 0 ? unique : ['4'];
+  }, [dynamicClasses, teacherUser, students, user]);
+
+  // Filter students assigned to teacher's assigned classes
+  const teacherStudents = students.filter(s => {
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+  });
 
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [currentSurah, setCurrentSurah] = useState('Al-Mulk');
@@ -40,25 +109,25 @@ export const QuranHifzTeacherView: React.FC = () => {
     const existing = quranRecords.find(q => q.studentId === studentId);
     setActiveStudentId(studentId);
     if (existing) {
-      setCurrentSurah(existing.currentSurahName || (QURAN_SURAHS.find(s => s.number === existing.currentSurahNumber)?.name) || 'Al-Mulk');
-      setAyahStart(String(existing.currentAyahStart));
-      setAyahEnd(String(existing.currentAyahEnd));
-      setHifzCount(String(existing.hifzSurahsCount));
-      setTajweedLevel(existing.tajweedLevel);
-      setMistakes(String(existing.mistakesCount));
-      setStatus(existing.lessonStatus);
+      setCurrentSurah(existing.currentSurahName || (QURAN_SURAHS.find(s => s.number === existing.currentSurahNumber)?.name) || 'Al-Fatihah');
+      setAyahStart(String(existing.currentAyahStart || 1));
+      setAyahEnd(String(existing.currentAyahEnd || 7));
+      setHifzCount(String(existing.hifzSurahsCount || 0));
+      setTajweedLevel(existing.tajweedLevel || 'Beginner');
+      setMistakes(String(existing.mistakesCount || 0));
+      setStatus(existing.lessonStatus || 'In Progress');
       setRemarks(existing.teacherRemarks || '');
       setSabaqi(existing.sabaqiRevision || '');
     } else {
-      setCurrentSurah('Al-Mulk');
+      setCurrentSurah('Al-Fatihah');
       setAyahStart('1');
-      setAyahEnd('15');
-      setHifzCount('28');
-      setTajweedLevel('Proficient');
+      setAyahEnd('7');
+      setHifzCount('0');
+      setTajweedLevel('Beginner');
       setMistakes('0');
       setStatus('In Progress');
       setRemarks('');
-      setSabaqi('Surah Al-Qalam');
+      setSabaqi('');
     }
   };
 
@@ -68,7 +137,7 @@ export const QuranHifzTeacherView: React.FC = () => {
 
     setIsSaving(true);
     try {
-      const cleanSurahName = currentSurah.trim() || 'Al-Mulk';
+      const cleanSurahName = currentSurah.trim() || 'Al-Fatihah';
       const existing = quranRecords.find(q => q.studentId === activeStudentId);
       const matchedSurah = QURAN_SURAHS.find(s => 
         s.name.toLowerCase() === cleanSurahName.toLowerCase() || 
@@ -77,38 +146,26 @@ export const QuranHifzTeacherView: React.FC = () => {
       );
       const surahNumber = matchedSurah ? matchedSurah.number : (existing?.currentSurahNumber || 1);
       const startNum = parseInt(ayahStart) || 1;
-      const endNum = parseInt(ayahEnd) || 10;
+      const endNum = parseInt(ayahEnd) || 7;
 
       await updateQuranProgress(activeStudentId, {
         currentSurahNumber: surahNumber,
         currentSurahName: cleanSurahName,
         currentAyahStart: startNum,
         currentAyahEnd: endNum,
-        sabaqLesson: `Surah ${cleanSurahName} (Ayah ${startNum}-${endNum})`,
-        sabaqiRevision: sabaqi,
         hifzSurahsCount: parseInt(hifzCount) || 0,
         tajweedLevel,
         mistakesCount: parseInt(mistakes) || 0,
         lessonStatus: status,
-        teacherRemarks: remarks
+        sabaqLesson: `Surah ${cleanSurahName} (Ayah ${startNum}-${endNum})`,
+        sabaqiRevision: sabaqi.trim() || undefined,
+        teacherRemarks: remarks.trim() || undefined
       }, user?.id || 'teacher-1');
 
-      const st = students.find(s => s.id === activeStudentId);
-      showToast(`✓ Quran progress updated for ${st?.name || 'Student'}`);
-
-      if (st) {
-        await pushNotification({
-          userId: st.parentId,
-          title: "Quran Progress Updated",
-          message: `${st.name}'s Sabaq lesson updated to Surah ${cleanSurahName} (Ayah ${startNum}-${endNum}).`,
-          category: "QURAN",
-          actionUrl: "/parent/quran"
-        });
-      }
-
+      showToast('✓ Quran & Hifz progress saved successfully!');
       setActiveStudentId(null);
     } catch (e) {
-      console.error("Failed to save Quran progress", e);
+      console.error('Failed to save Quran progress', e);
     } finally {
       setIsSaving(false);
     }
@@ -160,28 +217,28 @@ export const QuranHifzTeacherView: React.FC = () => {
                 <div className="bg-[#FAF8F2] p-2.5 rounded-xl">
                   <p className="text-[9px] text-[#667085] font-bold uppercase">Current Surah</p>
                   <p className="font-extrabold text-[#1F2933] mt-0.5 truncate">
-                    {rec?.sabaqLesson || 'Al-Mulk: 1-15'}
+                    {rec?.sabaqLesson || (rec?.currentSurahName ? `Surah ${rec.currentSurahName}` : 'Not Started')}
                   </p>
                 </div>
 
                 <div className="bg-[#FAF8F2] p-2.5 rounded-xl">
                   <p className="text-[9px] text-[#667085] font-bold uppercase">Hifz Surahs</p>
                   <p className="font-extrabold text-[#0F6B50] mt-0.5">
-                    {rec?.hifzSurahsCount || 28} Completed
+                    {rec?.hifzSurahsCount ?? 0} Completed
                   </p>
                 </div>
 
                 <div className="bg-[#FAF8F2] p-2.5 rounded-xl">
                   <p className="text-[9px] text-[#667085] font-bold uppercase">Tajweed</p>
                   <p className="font-extrabold text-[#1F2933] mt-0.5">
-                    {rec?.tajweedLevel || 'Proficient'}
+                    {rec?.tajweedLevel || 'Not Evaluated'}
                   </p>
                 </div>
 
                 <div className="bg-[#FAF8F2] p-2.5 rounded-xl">
                   <p className="text-[9px] text-[#667085] font-bold uppercase">Mistakes</p>
                   <p className="font-extrabold text-amber-700 mt-0.5">
-                    {rec?.mistakesCount || 0}
+                    {rec?.mistakesCount ?? 0}
                   </p>
                 </div>
               </div>

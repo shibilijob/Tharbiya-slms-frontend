@@ -17,40 +17,42 @@ export interface PaginatedStudentsResponse {
   pagination: PaginationInfo;
 }
 
+const mapBackendStudentToFrontend = (s: any): Student => ({
+  id: s._id || s.id,
+  admissionNo: s.admissionNumber || s.admissionNo || '',
+  name: s.name,
+  malayalamName: s.nameMalayalam || s.malayalamName || '',
+  gender: s.gender || 'MALE',
+  class: s.classId?.name?.replace(/^Class\s*/i, '') || s.class || '5',
+  status: s.isActive !== false ? 'ACTIVE' : 'INACTIVE',
+  parentId: s.parentId?._id || s.parentId || '',
+  parentName: s.parentId?.name || s.parentName || 'Parent',
+  parentPhone: s.parentId?.phone || s.parentPhone || '',
+  assignedTeacherId: s.classId?.classTeacherId?._id || s.classId?.classTeacherId || 'teacher-1',
+  teacherName: s.classId?.classTeacherId?.name || s.teacherName || 'Usthad Shihabudheen Saadi',
+  dob: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString().split('T')[0] : '2015-05-14',
+  admissionDate: s.admissionDate ? new Date(s.admissionDate).toISOString().split('T')[0] : '2024-06-01',
+  bloodGroup: s.bloodGroup || 'B+'
+});
+
 export const studentService = {
   async getAll(params?: { page?: number; limit?: number; search?: string; classId?: string; status?: string }): Promise<Student[]> {
     try {
-      const queryParams: Record<string, any> = {};
+      const queryParams: Record<string, any> = { limit: params?.limit || 100 };
       if (params?.page) queryParams.page = params.page;
-      if (params?.limit) queryParams.limit = params.limit;
       if (params?.search) queryParams.search = params.search;
       if (params?.classId && params.classId !== 'ALL') queryParams.classId = params.classId;
       if (params?.status && params.status !== 'ALL') queryParams.status = params.status;
 
-      const res = await api.get<any[]>('/sadhr/students', { params: queryParams });
-      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-        const mapped: Student[] = res.data.map((s: any) => ({
-          id: s._id || s.id,
-          admissionNo: s.admissionNumber || s.admissionNo || '',
-          name: s.name,
-          malayalamName: s.nameMalayalam || s.malayalamName || s.name,
-          gender: s.gender,
-          class: s.classId?.name || s.class || 'Class 5',
-          status: s.isActive !== false ? 'ACTIVE' : 'INACTIVE',
-          parentId: s.parentId?._id || s.parentId || '',
-          parentName: s.parentId?.name || s.parentName || 'Parent',
-          parentPhone: s.parentId?.phone || s.parentPhone || '',
-          assignedTeacherId: s.classId?.classTeacherId?._id || s.classId?.classTeacherId || 'teacher-1',
-          teacherName: s.classId?.classTeacherId?.name || 'Usthad Shihabudheen Saadi',
-          dob: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString().split('T')[0] : '2015-05-12',
-          admissionDate: s.admissionDate ? new Date(s.admissionDate).toISOString().split('T')[0] : '2024-06-01',
-          bloodGroup: s.bloodGroup || 'B+'
-        }));
+      const res = await api.get<any>('/sadhr/students', { params: queryParams });
+      const rawList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      if (Array.isArray(rawList)) {
+        const mapped = rawList.map(mapBackendStudentToFrontend);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
         return mapped;
       }
-    } catch {
-      // Offline fallback
+    } catch (err) {
+      console.warn("Backend /sadhr/students unavailable, using local cache", err);
     }
 
     const data = localStorage.getItem(STORAGE_KEY);
@@ -80,27 +82,11 @@ export const studentService = {
       if (params?.classId && params.classId !== 'ALL') queryParams.classId = params.classId;
       if (params?.status && params.status !== 'ALL') queryParams.status = params.status;
 
-      const res = await api.get<any[]>('/sadhr/students', { params: queryParams });
-      if (res.data && Array.isArray(res.data)) {
-        const mapped: Student[] = res.data.map((s: any) => ({
-          id: s._id || s.id,
-          admissionNo: s.admissionNumber || s.admissionNo || '',
-          name: s.name,
-          malayalamName: s.nameMalayalam || s.malayalamName || s.name,
-          gender: s.gender,
-          class: s.classId?.name || s.class || 'Class 5',
-          status: s.isActive !== false ? 'ACTIVE' : 'INACTIVE',
-          parentId: s.parentId?._id || s.parentId || '',
-          parentName: s.parentId?.name || s.parentName || 'Parent',
-          parentPhone: s.parentId?.phone || s.parentPhone || '',
-          assignedTeacherId: s.classId?.classTeacherId?._id || s.classId?.classTeacherId || 'teacher-1',
-          teacherName: s.classId?.classTeacherId?.name || 'Usthad Shihabudheen Saadi',
-          dob: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString().split('T')[0] : '2015-05-12',
-          admissionDate: s.admissionDate ? new Date(s.admissionDate).toISOString().split('T')[0] : '2024-06-01',
-          bloodGroup: s.bloodGroup || 'B+'
-        }));
-
-        const pagination: PaginationInfo = res.pagination || {
+      const res = await api.get<any>('/sadhr/students', { params: queryParams });
+      const rawList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      if (Array.isArray(rawList)) {
+        const mapped = rawList.map(mapBackendStudentToFrontend);
+        const pagination: PaginationInfo = res.data?.pagination || {
           total: mapped.length,
           page,
           limit,
@@ -111,8 +97,8 @@ export const studentService = {
 
         return { students: mapped, pagination };
       }
-    } catch {
-      // Offline fallback
+    } catch (err) {
+      console.warn("Backend /sadhr/students unavailable, using local fallback", err);
     }
 
     const all = await this.getAll();
@@ -129,7 +115,7 @@ export const studentService = {
     }
 
     if (params?.classId && params.classId !== 'ALL') {
-      filtered = filtered.filter((s) => s.class === params.classId);
+      filtered = filtered.filter((s) => s.class === params.classId || `Class ${s.class}` === params.classId);
     }
 
     if (params?.status && params.status !== 'ALL') {
@@ -156,25 +142,9 @@ export const studentService = {
   async getById(id: string): Promise<Student | null> {
     try {
       const res = await api.get<any>(`/sadhr/students/${id}`);
-      if (res.data) {
-        const s = res.data;
-        return {
-          id: s._id || s.id,
-          admissionNo: s.admissionNumber || s.admissionNo || '',
-          name: s.name,
-          malayalamName: s.nameMalayalam || s.malayalamName || s.name,
-          gender: s.gender,
-          class: s.classId?.name || s.class || 'Class 5',
-          status: s.isActive !== false ? 'ACTIVE' : 'INACTIVE',
-          parentId: s.parentId?._id || s.parentId || '',
-          parentName: s.parentId?.name || s.parentName || 'Parent',
-          parentPhone: s.parentId?.phone || s.parentPhone || '',
-          assignedTeacherId: s.classId?.classTeacherId?._id || s.classId?.classTeacherId || 'teacher-1',
-          teacherName: s.classId?.classTeacherId?.name || 'Usthad Shihabudheen Saadi',
-          dob: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString().split('T')[0] : '2015-05-12',
-          admissionDate: s.admissionDate ? new Date(s.admissionDate).toISOString().split('T')[0] : '2024-06-01',
-          bloodGroup: s.bloodGroup || 'B+'
-        };
+      const raw = res.data?.data || res.data;
+      if (raw) {
+        return mapBackendStudentToFrontend(raw);
       }
     } catch {
       // Offline fallback
@@ -201,25 +171,26 @@ export const studentService = {
 
   async create(studentData: Omit<Student, 'id'>): Promise<Student> {
     try {
-      const res = await api.post<any>('/sadhr/students', {
+      const payload = {
         name: studentData.name,
         admissionNumber: studentData.admissionNo,
         gender: studentData.gender,
         dateOfBirth: studentData.dob,
-        parentId: studentData.parentId,
+        parentId: studentData.parentId || undefined,
         classId: studentData.class,
-      });
-      if (res.data) {
-        const created: Student = {
-          ...studentData,
-          id: res.data._id || res.data.id || `student-${Date.now()}`
-        };
+        admissionDate: studentData.admissionDate,
+      };
+
+      const res = await api.post<any>('/sadhr/students', payload);
+      const raw = res.data?.data || res.data;
+      if (raw) {
+        const created = mapBackendStudentToFrontend(raw);
         const students = await this.getAll();
         localStorage.setItem(STORAGE_KEY, JSON.stringify([created, ...students]));
         return created;
       }
-    } catch {
-      // Offline fallback
+    } catch (err: any) {
+      console.error("Backend error creating student, falling back:", err?.response?.data || err?.message);
     }
 
     const students = await this.getAll();
@@ -235,14 +206,22 @@ export const studentService = {
   async update(id: string, updates: Partial<Student>): Promise<Student> {
     try {
       if (id && !id.startsWith('student-')) {
-        await api.patch(`/sadhr/students/${id}`, {
+        const res = await api.patch(`/sadhr/students/${id}`, {
           name: updates.name,
           gender: updates.gender,
           dateOfBirth: updates.dob,
+          parentId: updates.parentId || undefined,
+          classId: updates.class || undefined,
+          admissionDate: updates.admissionDate,
+          isActive: updates.status ? updates.status === 'ACTIVE' : undefined,
         });
+        const raw = res.data?.data || res.data;
+        if (raw) {
+          return mapBackendStudentToFrontend(raw);
+        }
       }
-    } catch {
-      // Offline fallback
+    } catch (err: any) {
+      console.error("Backend error updating student:", err?.response?.data || err?.message);
     }
 
     const students = await this.getAll();
@@ -260,8 +239,8 @@ export const studentService = {
       if (id && !id.startsWith('student-')) {
         await api.delete(`/sadhr/students/${id}`);
       }
-    } catch {
-      // Offline fallback
+    } catch (err: any) {
+      console.error("Backend error deleting student:", err?.response?.data || err?.message);
     }
 
     const students = await this.getAll();

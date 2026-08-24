@@ -1,83 +1,109 @@
-import type { User, UserRole, ParentUser, TeacherUser, AdminUser } from '../types';
+import type { User, UserRole, ParentUser, MuallimUser, SadhrMuallimUser } from '../types';
 import { CURRENT_MADRASA_NAME } from '../data/mockData';
 import { authClient } from '../lib/auth-client';
+import { api } from '../lib/axios';
 
 const AUTH_USER_KEY = 'tharbiyah_auth_user';
 
+const normalizeRole = (rawRole: any): UserRole => {
+  if (rawRole === 'SADHR_MUALLIM' || rawRole === 'ADMIN') return 'SADHR_MUALLIM';
+  if (rawRole === 'MUALLIM' || rawRole === 'TEACHER') return 'MUALLIM';
+  return 'PARENT';
+};
+
 const mapBetterAuthUserToAppUser = (authUser: any, targetRole?: UserRole): User => {
-  const role: UserRole = (authUser.role as UserRole) || targetRole || 'PARENT';
+  const role: UserRole = normalizeRole(authUser.role || targetRole);
 
   let assignedClasses: string[] = [];
   let assignedSubjects: string[] = [];
   let studentIds: string[] = [];
 
-  try {
-    if (typeof authUser.assignedClasses === 'string' && authUser.assignedClasses.startsWith('[')) {
-      assignedClasses = JSON.parse(authUser.assignedClasses);
+  if (Array.isArray(authUser.assignedClasses)) {
+    assignedClasses = authUser.assignedClasses.map((c: any) => String(c).replace(/^Class\s*/i, '').trim());
+  } else if (typeof authUser.assignedClasses === 'string') {
+    try {
+      const parsed = authUser.assignedClasses.startsWith('[')
+        ? JSON.parse(authUser.assignedClasses)
+        : [authUser.assignedClasses.trim()];
+      assignedClasses = (Array.isArray(parsed) ? parsed : [parsed]).map((c: any) => String(c).replace(/^Class\s*/i, '').trim());
+    } catch {
+      assignedClasses = authUser.assignedClasses.trim() ? [authUser.assignedClasses.trim().replace(/^Class\s*/i, '')] : [];
     }
-  } catch {
-    assignedClasses = [];
+  } else if (authUser.assignedClass) {
+    if (Array.isArray(authUser.assignedClass)) {
+      assignedClasses = authUser.assignedClass.map((c: any) => String(c).replace(/^Class\s*/i, '').trim());
+    } else {
+      assignedClasses = [String(authUser.assignedClass).replace(/^Class\s*/i, '').trim()];
+    }
   }
 
-  try {
-    if (typeof authUser.assignedSubjects === 'string' && authUser.assignedSubjects.startsWith('[')) {
-      assignedSubjects = JSON.parse(authUser.assignedSubjects);
+  if (Array.isArray(authUser.assignedSubjects)) {
+    assignedSubjects = authUser.assignedSubjects;
+  } else if (typeof authUser.assignedSubjects === 'string') {
+    try {
+      assignedSubjects = authUser.assignedSubjects.startsWith('[')
+        ? JSON.parse(authUser.assignedSubjects)
+        : [authUser.assignedSubjects.trim()];
+    } catch {
+      assignedSubjects = authUser.assignedSubjects.trim() ? [authUser.assignedSubjects.trim()] : [];
     }
-  } catch {
-    assignedSubjects = [];
   }
 
-  try {
-    if (typeof authUser.studentIds === 'string' && authUser.studentIds.startsWith('[')) {
-      studentIds = JSON.parse(authUser.studentIds);
+  if (Array.isArray(authUser.studentIds)) {
+    studentIds = authUser.studentIds;
+  } else if (typeof authUser.studentIds === 'string') {
+    try {
+      studentIds = authUser.studentIds.startsWith('[')
+        ? JSON.parse(authUser.studentIds)
+        : [authUser.studentIds.trim()];
+    } catch {
+      studentIds = [];
     }
-  } catch {
-    studentIds = [];
   }
 
   if (role === 'PARENT') {
     const parent: ParentUser = {
       id: authUser.id || 'parent-1',
-      name: authUser.name || 'Ali Mundambra',
+      name: authUser.name,
       role: 'PARENT',
-      email: authUser.email || 'ali.mundambra@gmail.com',
-      phone: authUser.phone || authUser.username || '9847123456',
+      email: authUser.email,
+      phone: authUser.phone || authUser.username,
       avatar: authUser.image || authUser.avatar || '',
       madrasaName: authUser.madrasaName || CURRENT_MADRASA_NAME,
-      studentIds: studentIds.length > 0 ? studentIds : ['student-1', 'student-2'],
+      studentIds: studentIds.length > 0 ? studentIds : ['no students'],
     };
     return parent;
   }
 
-  if (role === 'TEACHER') {
-    const teacher: TeacherUser = {
-      id: authUser.id || 'teacher-1',
-      name: authUser.name || 'Usthad Shibili Ahsani',
-      role: 'TEACHER',
-      email: authUser.email || 'shibili@darunnajath.edu',
-      phone: authUser.phone || authUser.username || '9847654321',
+  if (role === 'MUALLIM') {
+    const muallim: MuallimUser = {
+      id: authUser.id || 'muallim-1',
+      name: authUser.name || 'Usthad',
+      role: 'MUALLIM',
+      email: authUser.email,
+      phone: authUser.phone || authUser.username,
       avatar: authUser.image || authUser.avatar || '',
       madrasaName: authUser.madrasaName || CURRENT_MADRASA_NAME,
-      assignedClasses: assignedClasses.length > 0 ? assignedClasses : ['5', '6'],
-      assignedSubjects: assignedSubjects.length > 0 ? assignedSubjects : ['Quran', 'Hifz', 'Tajweed', 'Fiqh'],
-      designation: authUser.designation || 'Senior Usthad & Class 5 Mentor',
+      assignedClasses,
+      assignedSubjects: assignedSubjects.length > 0 ? assignedSubjects : ['Quran'],
+      designation: authUser.designation || 'Usthad & Class Mentor',
     };
-    return teacher;
+    return muallim;
   }
 
-  const admin: AdminUser = {
-    id: authUser.id || 'admin-1',
+  const sadhr: SadhrMuallimUser = {
+    id: authUser.id || 'sadhr-1',
     name: authUser.name || 'Usthad Shihabudheen Saadi',
-    role: 'ADMIN',
-    email: authUser.email || 'sadhrmuallim@darunnajath.edu',
-    phone: authUser.phone || authUser.username || '9847001122',
+    role: 'SADHR_MUALLIM',
+    email: authUser.email,
+    phone: authUser.phone || authUser.username,
     avatar: authUser.image || authUser.avatar || '',
     madrasaName: authUser.madrasaName || CURRENT_MADRASA_NAME,
-    designation: authUser.designation || 'Sadhr Muallim (Sadhr Mudarris) & Class 7 Mentor',
+    designation: authUser.designation || 'Sadhr Muallim (Sadhr Mudarris)',
     assignedClasses: assignedClasses.length > 0 ? assignedClasses : ['7', '6'],
     assignedSubjects: assignedSubjects.length > 0 ? assignedSubjects : ['Fiqh', 'Quran', 'Islamic Studies'],
   };
-  return admin;
+  return sadhr;
 };
 
 export const authService = {
@@ -94,102 +120,95 @@ export const authService = {
   },
 
   async login(role: UserRole, identifier: string, password?: string): Promise<User> {
-    const pwd = password || '123456';
+    const pwd = password || '';
+
+    if (!identifier.trim()) {
+      throw new Error('Please enter your phone number or email.');
+    }
+    if (!pwd.trim()) {
+      throw new Error('Please enter your password.');
+    }
 
     try {
-      let result;
-      if (identifier.includes('@')) {
-        result = await authClient.signIn.email({
-          email: identifier.trim().toLowerCase(),
-          password: pwd,
-        });
-      } else {
-        result = await authClient.signIn.username({
-          username: identifier.trim(),
-          password: pwd,
-        });
-      }
+      // Primary Backend Auth API (Connects to MongoDB and verifies credentials)
+      const apiRes: any = await api.post('/auth/login', {
+        identifier: identifier.trim(),
+        email: identifier.trim().toLowerCase(),
+        phone: identifier.trim(),
+        password: pwd,
+        role,
+      });
 
-      if (result?.data?.user) {
-        const appUser = mapBetterAuthUserToAppUser(result.data.user, role);
+      const userObj = apiRes?.user || apiRes?.data?.user || (apiRes?.id ? apiRes : null) || (apiRes?.data?.id ? apiRes.data : null);
+      if (userObj && (userObj.id || userObj._id || userObj.name)) {
+        const appUser = mapBetterAuthUserToAppUser(userObj, role);
+        const token =
+          apiRes?.token ||
+          apiRes?.session?.token ||
+          apiRes?.data?.token ||
+          apiRes?.data?.session?.token ||
+          `sess_${userObj.id || userObj._id}_${Date.now()}`;
+
+        localStorage.setItem('tharbiyah_auth_token', token);
+        localStorage.setItem('token', token);
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(appUser));
         return appUser;
       }
-
-      if (result?.error) {
-        throw new Error(result.error.message || 'Authentication failed');
-      }
-    } catch (err: any) {
-      console.warn("Better Auth login attempt:", err?.message || err);
-      if (err?.message && !err.message.includes('fetch') && !err.message.includes('Network') && !err.message.includes('Failed to fetch')) {
-        throw err;
-      }
+      throw new Error('Login failed: Invalid server response');
+    } catch (apiErr: any) {
+      const errMsg =
+        apiErr?.response?.data?.message ||
+        apiErr?.data?.message ||
+        apiErr?.message ||
+        'Invalid username or password. Please verify your credentials.';
+      throw new Error(errMsg);
     }
-
-    // Fallback user object based on authenticated role credentials
-    const fallbackUser: User = role === 'ADMIN'
-      ? {
-        id: 'admin-1',
-        name: 'Usthad Shihabudheen Saadi',
-        role: 'ADMIN',
-        email: identifier.includes('@') ? identifier : 'sadhrmuallim@darunnajath.edu',
-        phone: identifier.includes('@') ? '9847001122' : identifier,
-        designation: 'Sadhr Muallim & Class 7 Mentor',
-        assignedClasses: ['7', '6'],
-        assignedSubjects: ['Fiqh', 'Quran'],
-        madrasaName: CURRENT_MADRASA_NAME
-      } as AdminUser
-      : role === 'TEACHER'
-        ? {
-          id: 'teacher-1',
-          name: 'Usthad Shibili Ahsani',
-          role: 'TEACHER',
-          email: identifier.includes('@') ? identifier : 'shibili@darunnajath.edu',
-          phone: identifier.includes('@') ? '9847654321' : identifier,
-          designation: 'Senior Usthad & Class 5 Mentor',
-          assignedClasses: ['5', '6'],
-          assignedSubjects: ['Quran', 'Hifz', 'Tajweed'],
-          madrasaName: CURRENT_MADRASA_NAME
-        } as TeacherUser
-        : {
-          id: 'parent-1',
-          name: 'Parent User',
-          role: 'PARENT',
-          email: identifier.includes('@') ? identifier : 'parent@gmail.com',
-          phone: identifier.includes('@') ? '9847123456' : identifier,
-          studentIds: [],
-          madrasaName: CURRENT_MADRASA_NAME
-        } as ParentUser;
-
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(fallbackUser));
-    return fallbackUser;
   },
 
   async switchRole(role: UserRole): Promise<User> {
-    const user: User = role === 'ADMIN'
+    try {
+      const facRes = await api.get<any>('/faculty-members');
+      const teachers = Array.isArray(facRes.data) ? facRes.data : (facRes.data?.data || []);
+      if (Array.isArray(teachers) && teachers.length > 0) {
+        let matched = teachers.find((t: any) =>
+          role === 'SADHR_MUALLIM' ? (t.role === 'SADHR_MUALLIM' || t.designation?.toLowerCase().includes('sadhr')) : (t.role === 'MUALLIM')
+        );
+        if (!matched) matched = teachers[0];
+
+        if (matched) {
+          const appUser = mapBetterAuthUserToAppUser(matched, role);
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(appUser));
+          return appUser;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch faculty for switchRole", err);
+    }
+
+    const user: User = role === 'SADHR_MUALLIM'
       ? {
-        id: 'admin-1',
+        id: 'sadhr-1',
         name: 'Usthad Shihabudheen Saadi',
-        role: 'ADMIN',
-        email: 'sadhrmuallim@darunnajath.edu',
-        phone: '9847001122',
-        designation: 'Sadhr Muallim & Class 7 Mentor',
-        assignedClasses: ['7', '6'],
+        role: 'SADHR_MUALLIM',
+        email: 'shihab@yopmail.com',
+        phone: '0000000001',
+        designation: 'Sadhr Muallim (Sadhr Mudarris)',
+        assignedClasses: ['1', '8', '12'],
         assignedSubjects: ['Fiqh', 'Quran'],
         madrasaName: CURRENT_MADRASA_NAME
-      } as AdminUser
-      : role === 'TEACHER'
+      } as SadhrMuallimUser
+      : role === 'MUALLIM'
         ? {
-          id: 'teacher-1',
+          id: 'muallim-1',
           name: 'Usthad Shibili Ahsani',
-          role: 'TEACHER',
-          email: 'shibili@darunnajath.edu',
-          phone: '9847654321',
-          designation: 'Senior Usthad & Class 5 Mentor',
-          assignedClasses: ['5', '6'],
+          role: 'MUALLIM',
+          email: 'shibili@yopmail.com',
+          phone: '0000000003',
+          designation: 'Usthad & Class Mentor',
+          assignedClasses: ['4', '6', '10'],
           assignedSubjects: ['Quran', 'Hifz', 'Tajweed'],
           madrasaName: CURRENT_MADRASA_NAME
-        } as TeacherUser
+        } as MuallimUser
         : {
           id: 'parent-1',
           name: 'Parent User',
@@ -206,7 +225,7 @@ export const authService = {
 
   async loginWithGoogle(role: UserRole): Promise<User> {
     try {
-      const callbackURL = role === 'ADMIN' ? '/admin/dashboard' : '/teacher/dashboard';
+      const callbackURL = role === 'SADHR_MUALLIM' ? '/admin/dashboard' : '/teacher/dashboard';
       const result = await authClient.signIn.social({
         provider: 'google',
         callbackURL,

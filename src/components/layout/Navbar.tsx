@@ -31,8 +31,8 @@ export const Navbar: React.FC = () => {
 
   const getDashboardLink = () => {
     if (role === 'PARENT') return '/parent/dashboard';
-    if (role === 'TEACHER') return '/teacher/dashboard';
-    if (role === 'ADMIN') return '/admin/dashboard';
+    if (role === 'MUALLIM') return '/teacher/dashboard';
+    if (role === 'SADHR_MUALLIM') return '/admin/dashboard';
     return '/login';
   };
 
@@ -64,7 +64,7 @@ export const Navbar: React.FC = () => {
               <div className="flex items-center gap-3">
                 <Link to={getDashboardLink()}>
                   <Button size="sm" variant="primary" rightIcon={<ChevronRight className="w-4 h-4" />}>
-                    {role === 'PARENT' ? 'Parent Portal' : (role === 'TEACHER' ? 'Muallim Portal' : 'Sadhr Muallim Portal')}
+                    {role === 'PARENT' ? 'Parent Portal' : (role === 'MUALLIM' ? 'Muallim Portal' : 'Sadhr Muallim Portal')}
                   </Button>
                 </Link>
                 <button
@@ -81,7 +81,7 @@ export const Navbar: React.FC = () => {
                     Parent Login
                   </Button>
                 </Link>
-                <Link to="/login?role=TEACHER">
+                <Link to="/login?role=MUALLIM">
                   <Button size="sm" variant="primary">
                     Muallim Portal
                   </Button>
@@ -129,7 +129,7 @@ export const Navbar: React.FC = () => {
             {user ? (
               <Link to={getDashboardLink()} onClick={() => setIsMobileMenuOpen(false)}>
                 <Button className="w-full" variant="primary">
-                  Go to {role === 'TEACHER' ? 'Muallim' : (role === 'ADMIN' ? 'Sadhr Muallim' : 'Parent')} Dashboard
+                  Go to {role === 'MUALLIM' ? 'Muallim' : (role === 'SADHR_MUALLIM' ? 'Sadhr Muallim' : 'Parent')} Dashboard
                 </Button>
               </Link>
             ) : (
@@ -139,7 +139,7 @@ export const Navbar: React.FC = () => {
                     Parent Login
                   </Button>
                 </Link>
-                <Link to="/login?role=TEACHER" onClick={() => setIsMobileMenuOpen(false)}>
+                <Link to="/login?role=MUALLIM" onClick={() => setIsMobileMenuOpen(false)}>
                   <Button className="w-full" variant="secondary">
                     Muallim Portal (Usthad / Sadhr)
                   </Button>

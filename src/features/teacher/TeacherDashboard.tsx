@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -12,12 +12,11 @@ import { UpdateSubjectsModal } from './UpdateSubjectsModal';
 import { UpdatePracticalScoreModal } from './UpdatePracticalScoreModal';
 import { timetableService } from '../../services/timetableService';
 import { subjectService } from '../../services/subjectService';
-import { TimetablePeriod, MadrasaDay } from '../../data/mockTimetable';
-import { SubjectMeta } from '../../data/madrasaCurriculum';
+import { MuallimUser, TimetablePeriod, MadrasaDay } from '../../types';
+import { api } from '../../lib/axios';
 import {
   Users,
   CalendarCheck,
-  AlertTriangle,
   Award,
   BookOpen,
   GraduationCap,
@@ -40,10 +39,11 @@ import { formatDate } from '../../utils/formatters';
 
 export const TeacherDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { students, attendance, quranRecords, remarks, markAttendance, batchMarkAttendance } = useData();
+  const { students, attendance, quranRecords, remarks, markAttendance, batchMarkAttendance, getStudentSummary } = useData();
 
-  // Class filter for dashboard quick register
-  const [dashboardClass, setDashboardClass] = useState<'5' | '6'>('5');
+  // Assigned classes for this Muallim
+  const [teacherClasses, setTeacherClasses] = useState<string[]>([]);
+  const [dashboardClass, setDashboardClass] = useState<string>('5');
 
   // Modal states for Timetable, Subjects & Practical Score
   const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
@@ -54,6 +54,79 @@ export const TeacherDashboard: React.FC = () => {
   const [selectedDashboardDay, setSelectedDashboardDay] = useState<MadrasaDay>('Sunday');
   const [todaySchedule, setTodaySchedule] = useState<TimetablePeriod[]>([]);
   const [activeSubjectsCount, setActiveSubjectsCount] = useState(7);
+
+  // Determine assigned classes dynamically from live MongoDB database
+  useEffect(() => {
+    // 1. Fetch live faculty data from backend
+    api.get<any>('/faculty-members')
+      .then(res => {
+        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(teachers) && teachers.length > 0) {
+          const matched = teachers.find((t: any) =>
+            (user?.id && (t.id === user.id || t._id === user.id)) ||
+            (user?.email && t.email === user.email) ||
+            (user?.phone && t.phone === user.phone) ||
+            (user?.name && t.name && (
+              t.name.toLowerCase() === user.name.toLowerCase() ||
+              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
+              user.name.toLowerCase().includes(t.name.toLowerCase())
+            ))
+          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
+
+          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
+            const classes = matched.assignedClasses
+              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+              .filter(Boolean);
+
+            if (classes.length > 0) {
+              setTeacherClasses(classes);
+              setDashboardClass(classes[0]);
+
+              // Update local auth user cache
+              const stored = localStorage.getItem('tharbiyah_auth_user');
+              if (stored) {
+                try {
+                  const parsed = JSON.parse(stored);
+                  parsed.assignedClasses = classes;
+                  parsed.name = matched.name || parsed.name;
+                  parsed.id = matched.id || parsed.id;
+                  localStorage.setItem('tharbiyah_auth_user', JSON.stringify(parsed));
+                } catch {}
+              }
+              return;
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not query /faculty-members", err);
+      });
+
+    // 2. Fallback to user state
+    const teacherUser = user as any;
+    let rawList: any[] = [];
+    if (Array.isArray(teacherUser?.assignedClasses)) {
+      rawList = teacherUser.assignedClasses;
+    } else if (typeof teacherUser?.assignedClasses === 'string') {
+      try {
+        const parsed = JSON.parse(teacherUser.assignedClasses);
+        rawList = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        rawList = [teacherUser.assignedClasses];
+      }
+    } else if (teacherUser?.assignedClass) {
+      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+    }
+
+    const userClasses = rawList
+      .map(c => String(c).replace(/^Class\s*/i, '').trim())
+      .filter(Boolean);
+
+    if (userClasses.length > 0) {
+      setTeacherClasses(userClasses);
+      setDashboardClass(userClasses[0]);
+    }
+  }, [user]);
 
   const loadTimetableAndSubjects = () => {
     const schedule = timetableService.getDaySchedule(dashboardClass, selectedDashboardDay);
@@ -66,21 +139,35 @@ export const TeacherDashboard: React.FC = () => {
     loadTimetableAndSubjects();
   }, [dashboardClass, selectedDashboardDay]);
 
-  // Filter students assigned to this teacher (e.g. Class 5 & 6)
-  const teacherStudents = students.filter(s => s.class === '5' || s.class === '6');
-  const classStudents = students.filter(s => s.class === dashboardClass);
+  // Filter students assigned ONLY to this teacher's assigned classes
+  const teacherStudents = useMemo(() => {
+    return students.filter(s => {
+      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+      return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+    });
+  }, [students, teacherClasses, user]);
 
-  const todayStr = "2026-08-16";
+  const classStudents = useMemo(() => {
+    return students.filter(s => {
+      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+      return sClass === dashboardClass;
+    });
+  }, [students, dashboardClass]);
+
+  const todayStr = new Date().toISOString().split('T')[0];
   const todayAttendance = attendance.filter(a => a.date === todayStr);
 
-  const [searchQuery, setSearchQuery] = useState('');
   const [markingSuccess, setMarkingSuccess] = useState(false);
 
-  // Statistics
-  const totalStudentsCount = 42; // Teacher total across 5 & 6
-  const presentTodayCount = 39;
-  const needsAttentionCount = 5;
-  const excellentProgressCount = 8;
+  // Dynamic Statistics based ONLY on this teacher's assigned students (Real Data)
+  const totalStudentsCount = teacherStudents.length;
+  const presentTodayCount = todayAttendance.filter(a =>
+    a.status === 'PRESENT' && teacherStudents.some(s => s.id === a.studentId)
+  ).length;
+  const excellentProgressCount = teacherStudents.filter(s => {
+    const summ = getStudentSummary(s.id);
+    return (summ?.overallProgress || 0) >= 80;
+  }).length;
 
   // Quick mark all present for today
   const handleMarkAllPresent = async () => {
@@ -95,9 +182,6 @@ export const TeacherDashboard: React.FC = () => {
     setTimeout(() => setMarkingSuccess(false), 3000);
   };
 
-  // Flagged students needing attention (e.g. low attendance, revision needed, or recent remark)
-  const studentsNeedingAttention = teacherStudents.slice(3, 8);
-
   return (
     <div className="space-y-6">
       {/* 1. TOP TEACHER HERO BANNER */}
@@ -108,13 +192,13 @@ export const TeacherDashboard: React.FC = () => {
               Muallim Classroom Workspace
             </span>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              Assalamu Alaikum, {user?.name || "Usthad Shihabudheen Saadi"}
+              Assalamu Alaikum, {user?.name || "Usthad"}
             </h1>
             <p className="font-malayalam text-xs sm:text-sm text-[#DDEDE5] font-semibold">
-              Class 5 & 6 • Darunnajath Mundambra
+              {teacherClasses.map(c => `Class ${c}`).join(' & ') || `Class ${dashboardClass}`} • Darunnajath Mundambra
             </p>
             <p className="text-xs text-[#DDEDE5]/80">
-              Today: <strong className="text-white">Sunday, 16 August 2026</strong>
+              Assigned Classes: <strong className="text-white">{teacherClasses.map(c => `Class ${c}`).join(', ') || `Class ${dashboardClass}`}</strong>
             </p>
           </div>
 
@@ -138,31 +222,24 @@ export const TeacherDashboard: React.FC = () => {
       </div>
 
       {/* 2. STATS OVERVIEW */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="Total Students"
           value={totalStudentsCount}
-          sublabel="Assigned in Class 5 & 6"
+          sublabel={`Assigned in ${teacherClasses.map(c => `Class ${c}`).join(' & ') || `Class ${dashboardClass}`}`}
           icon={<Users className="w-5 h-5" />}
         />
         <StatCard
           label="Present Today"
           value={presentTodayCount}
-          sublabel="93% Daily Attendance"
+          sublabel="Daily Attendance"
           icon={<CalendarCheck className="w-5 h-5" />}
-          trend={{ value: "High", positive: true }}
-        />
-        <StatCard
-          label="Needs Attention"
-          value={needsAttentionCount}
-          sublabel="Quran revision / absent"
-          icon={<AlertTriangle className="w-5 h-5 text-amber-700" />}
-          trend={{ value: "5 flagged" }}
+          trend={{ value: "Active", positive: true }}
         />
         <StatCard
           label="Excellent Progress"
           value={excellentProgressCount}
-          sublabel="Distinction in Hifz"
+          sublabel="Distinction in Sabaq/Hifz"
           icon={<Award className="w-5 h-5" />}
           variant="gold"
         />
@@ -177,29 +254,31 @@ export const TeacherDashboard: React.FC = () => {
               Class {dashboardClass} Attendance Register (Today)
             </h3>
             <p className="text-xs text-[#667085] mt-0.5">
-              Quickly record or toggle attendance for active students
+              Quickly record or toggle attendance for your assigned students
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex bg-[#FAF8F2] border border-[#E3EAE6] p-1 rounded-xl">
-              <button
-                onClick={() => setDashboardClass('5')}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                  dashboardClass === '5' ? 'bg-[#0F6B50] text-white shadow-xs' : 'text-[#667085] hover:text-[#1F2933]'
-                }`}
-              >
-                Class 5
-              </button>
-              <button
-                onClick={() => setDashboardClass('6')}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                  dashboardClass === '6' ? 'bg-[#0F6B50] text-white shadow-xs' : 'text-[#667085] hover:text-[#1F2933]'
-                }`}
-              >
-                Class 6
-              </button>
-            </div>
+            {/* Show tabs only for assigned classes */}
+            {teacherClasses.length > 1 ? (
+              <div className="flex bg-[#FAF8F2] border border-[#E3EAE6] p-1 rounded-xl">
+                {teacherClasses.map(cls => (
+                  <button
+                    key={cls}
+                    onClick={() => setDashboardClass(cls)}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                      dashboardClass === cls ? 'bg-[#0F6B50] text-white shadow-xs' : 'text-[#667085] hover:text-[#1F2933]'
+                    }`}
+                  >
+                    Class {cls}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="px-3 py-1 bg-[#DDEDE5] text-[#084C3A] text-xs font-extrabold rounded-xl border border-[#0F6B50]/20">
+                Class {teacherClasses[0] || dashboardClass}
+              </span>
+            )}
 
             <Button
               size="sm"
@@ -218,58 +297,64 @@ export const TeacherDashboard: React.FC = () => {
 
         {/* Quick Student Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-4">
-          {classStudents.slice(0, 6).map(student => {
-            const record = todayAttendance.find(a => a.studentId === student.id);
-            const status = record?.status || 'PRESENT';
+          {classStudents.length === 0 ? (
+            <div className="col-span-full py-6 text-center text-xs text-[#667085]">
+              No students enrolled in Class {dashboardClass} yet.
+            </div>
+          ) : (
+            classStudents.slice(0, 6).map(student => {
+              const record = todayAttendance.find(a => a.studentId === student.id);
+              const status = record?.status;
 
-            return (
-              <div
-                key={student.id}
-                className="p-3 rounded-xl bg-[#FAF8F2] border border-[#E3EAE6] flex items-center justify-between"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Avatar name={student.name} gender={student.gender} size="sm" />
-                  <div>
-                    <p className="text-xs font-bold text-[#1F2933] truncate">{student.name}</p>
-                    <p className="text-[10px] text-[#667085]">Adm: {student.admissionNo}</p>
+              return (
+                <div
+                  key={student.id}
+                  className="p-3 rounded-xl bg-[#FAF8F2] border border-[#E3EAE6] flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Avatar name={student.name} gender={student.gender} size="sm" />
+                    <div>
+                      <p className="text-xs font-bold text-[#1F2933] truncate">{student.name}</p>
+                      <p className="text-[10px] text-[#667085]">Adm: {student.admissionNo}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => markAttendance(student.id, todayStr, 'PRESENT', user?.id || 'teacher-1')}
+                      className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'PRESENT'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-emerald-100'
+                        }`}
+                      title="Present"
+                    >
+                      P
+                    </button>
+                    <button
+                      onClick={() => markAttendance(student.id, todayStr, 'LATE', user?.id || 'teacher-1')}
+                      className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'LATE'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-amber-100'
+                        }`}
+                      title="Late"
+                    >
+                      L
+                    </button>
+                    <button
+                      onClick={() => markAttendance(student.id, todayStr, 'ABSENT', user?.id || 'teacher-1')}
+                      className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'ABSENT'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-rose-100'
+                        }`}
+                      title="Absent"
+                    >
+                      A
+                    </button>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => markAttendance(student.id, todayStr, 'PRESENT', user?.id || 'teacher-1')}
-                    className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'PRESENT'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-white text-[#667085] hover:bg-emerald-100'
-                      }`}
-                    title="Present"
-                  >
-                    P
-                  </button>
-                  <button
-                    onClick={() => markAttendance(student.id, todayStr, 'LATE', user?.id || 'teacher-1')}
-                    className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'LATE'
-                      ? 'bg-amber-500 text-white shadow-xs'
-                      : 'bg-white text-[#667085] hover:bg-amber-100'
-                      }`}
-                    title="Late"
-                  >
-                    L
-                  </button>
-                  <button
-                    onClick={() => markAttendance(student.id, todayStr, 'ABSENT', user?.id || 'teacher-1')}
-                    className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'ABSENT'
-                      ? 'bg-rose-600 text-white shadow-xs'
-                      : 'bg-white text-[#667085] hover:bg-rose-100'
-                      }`}
-                    title="Absent"
-                  >
-                    A
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </Card>
 
@@ -310,7 +395,7 @@ export const TeacherDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Day Selector Tabs (Sunday to Saturday including Friday) */}
+        {/* Day Selector Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pt-4 pb-1">
           {(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as MadrasaDay[]).map(day => (
             <button
@@ -330,157 +415,119 @@ export const TeacherDashboard: React.FC = () => {
 
         {/* Periods Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3">
-          {todaySchedule.map(period => (
-            <div
-              key={period.id}
-              className="p-3.5 rounded-2xl bg-[#FAF8F2] border border-[#E3EAE6] hover:border-[#0F6B50] transition-all flex items-start gap-3"
-            >
-              <div className="w-9 h-9 rounded-xl bg-[#DDEDE5] text-[#084C3A] flex flex-col items-center justify-center font-black shrink-0">
-                <span className="text-[8px] uppercase leading-none text-[#0F6B50]">P</span>
-                <span className="text-xs leading-none mt-0.5">{period.periodNumber}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-1">
-                  <h4 className="text-xs font-extrabold text-[#1F2933] truncate">{period.subject}</h4>
-                  <span className="text-[10px] font-bold text-[#0F6B50] bg-white px-2 py-0.5 rounded-md border border-[#E3EAE6] shrink-0">
-                    {period.startTime}
-                  </span>
-                </div>
-                <p className="font-malayalam text-[11px] text-[#0F6B50] font-semibold truncate">{period.subjectMalayalam}</p>
-                <div className="flex items-center gap-2 mt-1 text-[10px] text-[#667085]">
-                  <span className="truncate">{period.teacherName}</span>
-                  <span>•</span>
-                  <span className="shrink-0">{period.room}</span>
-                </div>
-              </div>
+          {todaySchedule.length === 0 ? (
+            <div className="col-span-full py-6 text-center text-xs text-[#667085]">
+              No timetable periods scheduled for Class {dashboardClass} on {selectedDashboardDay}.
             </div>
-          ))}
+          ) : (
+            todaySchedule.map(period => (
+              <div
+                key={period.id}
+                className="p-3.5 rounded-2xl bg-[#FAF8F2] border border-[#E3EAE6] hover:border-[#0F6B50] transition-all flex items-start gap-3"
+              >
+                <div className="w-9 h-9 rounded-xl bg-[#DDEDE5] text-[#084C3A] flex flex-col items-center justify-center font-black shrink-0">
+                  <span className="text-[8px] uppercase leading-none text-[#0F6B50]">P</span>
+                  <span className="text-xs leading-none mt-0.5">{period.periodNumber}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <h4 className="text-xs font-extrabold text-[#1F2933] truncate">{period.subject}</h4>
+                    <span className="text-[10px] font-bold text-[#0F6B50] bg-white px-2 py-0.5 rounded-md border border-[#E3EAE6] shrink-0">
+                      {period.startTime}
+                    </span>
+                  </div>
+                  <p className="font-malayalam text-[11px] text-[#0F6B50] font-semibold truncate">{period.subjectMalayalam}</p>
+                  <div className="flex items-center gap-2 mt-1 text-[10px] text-[#667085]">
+                    <span className="truncate">{period.teacherName}</span>
+                    <span>•</span>
+                    <span className="shrink-0">{period.room}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </Card>
 
-      {/* 5. TWO-COLUMN: STUDENTS NEEDING ATTENTION & MUALLIM QUICK ACTIONS */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Students Needing Attention */}
-        <div className="lg:col-span-6">
-          <Card className="p-5 sm:p-6 h-full border-amber-200">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#E3EAE6]">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 rounded-lg bg-amber-100 text-amber-800">
-                  <AlertTriangle className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-base font-bold text-[#1F2933]">
-                    Students Needing Attention ({needsAttentionCount})
-                  </h3>
-                  <p className="text-[10px] text-[#667085]">Requires Quran revision or attendance check</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {studentsNeedingAttention.map(student => (
-                <div
-                  key={student.id}
-                  className="p-3 rounded-2xl bg-[#FAF8F2] border border-[#E3EAE6] flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar name={student.name} gender={student.gender} size="md" />
-                    <div>
-                      <p className="text-xs font-bold text-[#1F2933]">{student.name}</p>
-                      <p className="font-malayalam text-[10px] text-[#0F6B50] font-semibold">{student.malayalamName}</p>
-                      <p className="text-[10px] text-amber-800 font-semibold mt-0.5">
-                        {student.id === 'student-4' ? 'Needs revision on Surah An-Naba' : 'Recent leave informed'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <Link to={`/teacher/students?id=${student.id}`}>
-                    <Button size="sm" variant="outline" className="text-xs">
-                      Update
-                    </Button>
-                  </Link>
-                </div>
-              ))}
-            </div>
-          </Card>
+      {/* 5. MUALLIM WORKSPACE QUICK ACTIONS */}
+      <Card className="p-5 sm:p-6 bg-white border border-[#E3EAE6]">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#E3EAE6]">
+          <div>
+            <h3 className="text-base font-bold text-[#1F2933]">
+              Muallim Quick Actions & Tools
+            </h3>
+            <p className="text-xs text-[#667085] mt-0.5">
+              Access classroom evaluations, routine updates, marksheet entry, and student records
+            </p>
+          </div>
+          <Badge variant="gold" size="sm">
+            {activeSubjectsCount} Subjects
+          </Badge>
         </div>
 
-        {/* Right: Quick Action Shortcuts & Tools */}
-        <div className="lg:col-span-6 space-y-4">
-          <Card className="p-5 sm:p-6 h-full">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#E3EAE6]">
-              <h3 className="text-base font-bold text-[#1F2933]">
-                Muallim Quick Actions
-              </h3>
-              <Badge variant="gold" size="sm">
-                {activeSubjectsCount} Subjects
-              </Badge>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {/* Button: Update Practical Score */}
+          <button
+            onClick={() => setIsPracticalScoreModalOpen(true)}
+            className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] hover:border-[#0F6B50] transition-all text-left group"
+          >
+            <HeartHandshake className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
+            <p className="text-xs font-bold text-[#1F2933] group-hover:text-[#0F6B50] transition-colors">
+              Update Practical Score
+            </p>
+            <p className="text-[10px] text-[#667085] mt-0.5">Adab, Salah & Akhlaq scores</p>
+          </button>
 
-            <div className="grid grid-cols-2 gap-3">
-              {/* Button: Update Practical Score */}
-              <button
-                onClick={() => setIsPracticalScoreModalOpen(true)}
-                className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] hover:border-[#0F6B50] transition-all text-left group"
-              >
-                <HeartHandshake className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-bold text-[#1F2933] group-hover:text-[#0F6B50] transition-colors">
-                  Update Practical Score
-                </p>
-                <p className="text-[10px] text-[#667085] mt-0.5">Adab, Salah & Akhlaq scores</p>
-              </button>
+          {/* Button: Update Time Table */}
+          <button
+            onClick={() => setIsTimetableModalOpen(true)}
+            className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] hover:border-[#0F6B50] transition-all text-left group"
+          >
+            <CalendarDays className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
+            <p className="text-xs font-bold text-[#1F2933] group-hover:text-[#0F6B50] transition-colors">
+              Update Time Table
+            </p>
+            <p className="text-[10px] text-[#667085] mt-0.5">Class periods & daily routines</p>
+          </button>
 
-              {/* Button: Update Time Table */}
-              <button
-                onClick={() => setIsTimetableModalOpen(true)}
-                className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] hover:border-[#0F6B50] transition-all text-left group"
-              >
-                <CalendarDays className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-bold text-[#1F2933] group-hover:text-[#0F6B50] transition-colors">
-                  Update Time Table
-                </p>
-                <p className="text-[10px] text-[#667085] mt-0.5">Class periods & daily routines</p>
-              </button>
+          {/* Button: Update Subjects */}
+          <button
+            onClick={() => setIsSubjectsModalOpen(true)}
+            className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] hover:border-[#0F6B50] transition-all text-left group"
+          >
+            <BookOpenCheck className="w-6 h-6 text-[#C9A227] mb-2 group-hover:scale-105 transition-transform" />
+            <p className="text-xs font-bold text-[#1F2933] group-hover:text-[#0F6B50] transition-colors">
+              Update Subjects
+            </p>
+            <p className="text-[10px] text-[#667085] mt-0.5">Curriculum & Malayalam titles</p>
+          </button>
 
-              {/* Button: Update Subjects */}
-              <button
-                onClick={() => setIsSubjectsModalOpen(true)}
-                className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] hover:border-[#0F6B50] transition-all text-left group"
-              >
-                <BookOpenCheck className="w-6 h-6 text-[#C9A227] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-bold text-[#1F2933] group-hover:text-[#0F6B50] transition-colors">
-                  Update Subjects
-                </p>
-                <p className="text-[10px] text-[#667085] mt-0.5">Curriculum & Malayalam titles</p>
-              </button>
+          <Link to="/teacher/assessments" className="p-4 rounded-2xl bg-[#DDEDE5]/40 hover:bg-[#DDEDE5] border border-[#bbdcd0] transition-all group">
+            <GraduationCap className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
+            <p className="text-xs font-bold text-[#084C3A]">Enter Assessment Marks</p>
+            <p className="text-[10px] text-[#0F6B50] mt-0.5">Exam grades & test scoring</p>
+          </Link>
 
-              <Link to="/teacher/assessments" className="p-4 rounded-2xl bg-[#DDEDE5]/40 hover:bg-[#DDEDE5] border border-[#bbdcd0] transition-all group">
-                <GraduationCap className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-bold text-[#084C3A]">Enter Assessment Marks</p>
-                <p className="text-[10px] text-[#0F6B50] mt-0.5">Exam grades & test scoring</p>
-              </Link>
+          <Link to="/teacher/quran" className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#FBF4DE] border border-[#C9A227]/30 transition-all group">
+            <BookOpen className="w-6 h-6 text-[#C9A227] mb-2 group-hover:scale-105 transition-transform" />
+            <p className="text-xs font-bold text-[#1F2933]">Update Sabaq & Hifz</p>
+            <p className="text-[10px] text-[#667085] mt-0.5">Surah, Ayahs & Tajweed</p>
+          </Link>
 
-              <Link to="/teacher/quran" className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#FBF4DE] border border-[#C9A227]/30 transition-all group">
-                <BookOpen className="w-6 h-6 text-[#C9A227] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-bold text-[#1F2933]">Update Sabaq & Hifz</p>
-                <p className="text-[10px] text-[#667085] mt-0.5">Surah, Ayahs & Tajweed</p>
-              </Link>
-
-              <Link to="/teacher/students" className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/30 border border-[#E3EAE6] transition-all group">
-                <Users className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-bold text-[#1F2933]">Student Dossiers</p>
-                <p className="text-[10px] text-[#667085] mt-0.5">View all 42 students</p>
-              </Link>
-            </div>
-          </Card>
+          <Link to="/teacher/students" className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/30 border border-[#E3EAE6] transition-all group">
+            <Users className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
+            <p className="text-xs font-bold text-[#1F2933]">Student Dossiers</p>
+            <p className="text-[10px] text-[#667085] mt-0.5">View all {totalStudentsCount} assigned students</p>
+          </Link>
         </div>
-      </div>
+      </Card>
 
       {/* Timetable Modal */}
       <UpdateTimetableModal
         isOpen={isTimetableModalOpen}
         onClose={() => setIsTimetableModalOpen(false)}
         initialClass={dashboardClass}
+        assignedClasses={teacherClasses}
         onUpdated={loadTimetableAndSubjects}
       />
 

@@ -37,7 +37,28 @@ export const UpdatePracticalScoreModal: React.FC<UpdatePracticalScoreModalProps>
   const { students, akhlaqRecords, saveAkhlaq } = useData();
   const { showToast, pushNotification } = useNotifications();
 
-  const teacherStudents = students.filter(s => s.class === '5' || s.class === '6');
+  const teacherUser = user as any;
+  let rawList: any[] = [];
+  if (Array.isArray(teacherUser?.assignedClasses)) {
+    rawList = teacherUser.assignedClasses;
+  } else if (typeof teacherUser?.assignedClasses === 'string') {
+    try {
+      const parsed = JSON.parse(teacherUser.assignedClasses);
+      rawList = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      rawList = [teacherUser.assignedClasses];
+    }
+  } else if (teacherUser?.assignedClass) {
+    rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+  }
+
+  const rawAssigned: string[] = rawList.map((c: any) => String(c).replace(/^Class\s*/i, '').trim()).filter(Boolean);
+  const teacherStudents = students.filter(s => {
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    return (rawAssigned.length > 0 && rawAssigned.includes(sClass)) ||
+      (user?.id && s.assignedTeacherId === user.id) ||
+      (user?.name && s.teacherName === user.name);
+  });
 
   const [targetStudentId, setTargetStudentId] = useState<string>(
     initialStudentId || teacherStudents[0]?.id || ''
@@ -88,16 +109,16 @@ export const UpdatePracticalScoreModal: React.FC<UpdatePracticalScoreModalProps>
     if (isOpen && targetStudentId) {
       const existing = akhlaqRecords.find(r => r.studentId === targetStudentId);
       if (existing) {
-        setOverallScore(existing.overallScore || 90);
+        setOverallScore(existing.overallScore || 0);
         setEvaluatedDate(existing.evaluatedDate || new Date().toISOString().split('T')[0]);
         setRemarks(existing.teacherRemarks || '');
         if (existing.scores) {
           setCategoryScores(existing.scores);
         }
       } else {
-        setOverallScore(90);
+        setOverallScore(0);
         setEvaluatedDate(new Date().toISOString().split('T')[0]);
-        setRemarks('Maintains excellent Adab and punctuality in daily prayers.');
+        setRemarks('');
       }
     }
   }, [isOpen, targetStudentId, akhlaqRecords]);

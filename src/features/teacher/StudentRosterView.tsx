@@ -9,13 +9,11 @@ import { Avatar } from '../../components/common/Avatar';
 import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
-import { Student, Gender, StudentStatus } from '../../types';
+import { Student } from '../../types';
 import {
   Users,
   Search,
   Eye,
-  Plus,
-  UserPlus,
   GraduationCap,
   Sparkles,
   Phone,
@@ -25,124 +23,94 @@ import {
   Heart
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
+import { api } from '../../lib/axios';
 
 export const StudentRosterView: React.FC = () => {
-  const { students, getStudentSummary, addStudent } = useData();
+  const { students, getStudentSummary } = useData();
   const { user } = useAuth();
   const { showToast } = useNotifications();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [activeStudent, setActiveStudent] = useState<Student | null>(null);
+  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
 
-  // Add Student Modal State
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  React.useEffect(() => {
+    api.get<any>('/faculty-members')
+      .then(res => {
+        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(teachers) && teachers.length > 0) {
+          const matched = teachers.find((t: any) =>
+            (user?.id && (t.id === user.id || t._id === user.id)) ||
+            (user?.email && t.email === user.email) ||
+            (user?.phone && t.phone === user.phone) ||
+            (user?.name && t.name && (
+              t.name.toLowerCase() === user.name.toLowerCase() ||
+              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
+              user.name.toLowerCase().includes(t.name.toLowerCase())
+            ))
+          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
 
-  // Add Student Form Fields
-  const [name, setName] = useState('');
-  const [malayalamName, setMalayalamName] = useState('');
-  const [admissionNo, setAdmissionNo] = useState('');
-  const [gender, setGender] = useState<Gender>('MALE');
-  const [dob, setDob] = useState('2015-05-14');
-  const [studentClass, setStudentClass] = useState('5');
-  const [parentType, setParentType] = useState<'EXISTING' | 'NEW'>('NEW');
-  const [parentId, setParentId] = useState('');
-  const [customParentName, setCustomParentName] = useState('');
-  const [customParentPhone, setCustomParentPhone] = useState('');
-  const [admissionDate, setAdmissionDate] = useState(new Date().toISOString().split('T')[0]);
-  const [bloodGroup, setBloodGroup] = useState('O+');
-  const [address, setAddress] = useState('');
+          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
+            const classes = matched.assignedClasses
+              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+              .filter(Boolean);
+            if (classes.length > 0) {
+              setDynamicClasses(classes);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user]);
 
-  // Extract unique parents from current students registry
-  const existingParents = React.useMemo(() => {
-    const map = new Map<string, { id: string; name: string; phone: string }>();
-    students.forEach(s => {
-      if (s.parentId && s.parentName && !map.has(s.parentId)) {
-        map.set(s.parentId, { id: s.parentId, name: s.parentName, phone: s.parentPhone || '' });
+  // Dynamic assigned classes for this Muallim
+  const teacherUser = user as any;
+  const teacherClasses = React.useMemo(() => {
+    if (dynamicClasses.length > 0) return dynamicClasses;
+
+    let rawList: any[] = [];
+    if (Array.isArray(teacherUser?.assignedClasses)) {
+      rawList = teacherUser.assignedClasses;
+    } else if (typeof teacherUser?.assignedClasses === 'string') {
+      try {
+        const parsed = JSON.parse(teacherUser.assignedClasses);
+        rawList = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        rawList = [teacherUser.assignedClasses];
       }
-    });
-    return Array.from(map.values());
-  }, [students]);
+    } else if (teacherUser?.assignedClass) {
+      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+    }
 
-  // Filter students assigned to teacher (Classes 5 and 6)
-  const teacherStudents = students.filter(s => s.class === '5' || s.class === '6');
+    const cleaned = rawList
+      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+      .filter(Boolean);
+
+    if (cleaned.length > 0) return cleaned;
+
+    const fromStudents = students
+      .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
+      .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
+    const unique = Array.from(new Set(fromStudents)).filter(Boolean);
+    return unique.length > 0 ? unique : ['4'];
+  }, [dynamicClasses, teacherUser, students, user]);
+
+  // Filter students assigned to teacher's assigned classes
+  const teacherStudents = students.filter(s => {
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+  });
 
   const filteredStudents = teacherStudents.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (s.malayalamName && s.malayalamName.includes(searchQuery));
-    const matchesClass = selectedClass === 'ALL' || s.class === selectedClass;
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    const fClass = selectedClass.replace(/^Class\s*/i, '').trim();
+    const matchesClass = selectedClass === 'ALL' || sClass === fClass;
     return matchesSearch && matchesClass;
   });
-
-  const handleOpenAdd = () => {
-    setName('');
-    setMalayalamName('');
-    setAdmissionNo(`DN-2026-${Math.floor(100 + Math.random() * 900)}`);
-    setGender('MALE');
-    setDob('2015-05-14');
-    setStudentClass('5');
-    setParentType(existingParents.length > 0 ? 'EXISTING' : 'NEW');
-    setParentId(existingParents[0]?.id || '');
-    setCustomParentName('');
-    setCustomParentPhone('');
-    setAdmissionDate(new Date().toISOString().split('T')[0]);
-    setBloodGroup('O+');
-    setAddress('Mundambra, Kerala');
-    setIsAddModalOpen(true);
-  };
-
-  const handleAddSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    setIsSaving(true);
-    try {
-      let finalParentName = '';
-      let finalParentPhone = '';
-      let finalParentId = parentId;
-
-      if (parentType === 'NEW' && customParentName.trim()) {
-        finalParentName = customParentName.trim();
-        finalParentPhone = customParentPhone.trim() || '+91 98470 00000';
-        finalParentId = `parent-custom-${Date.now()}`;
-      } else {
-        const parentObj = existingParents.find(p => p.id === parentId) || existingParents[0];
-        finalParentName = parentObj?.name || 'Parent';
-        finalParentPhone = parentObj?.phone || '+91 98470 00000';
-        finalParentId = parentObj?.id || `parent-${Date.now()}`;
-      }
-
-      const teacherName = user?.name || 'Usthad Shihabudheen Saadi';
-      const teacherId = user?.id || 'teacher-1';
-
-      await addStudent({
-        name: name.trim(),
-        malayalamName: malayalamName.trim() || undefined,
-        admissionNo: admissionNo.trim(),
-        gender,
-        dob,
-        class: studentClass,
-        parentId: finalParentId,
-        parentName: finalParentName,
-        parentPhone: finalParentPhone,
-        assignedTeacherId: teacherId,
-        teacherName: teacherName,
-        admissionDate,
-        status: 'ACTIVE' as StudentStatus,
-        bloodGroup,
-        address
-      });
-
-      showToast(`✓ New student ${name} enrolled in Class ${studentClass} successfully!`);
-      setIsAddModalOpen(false);
-    } catch (err) {
-      console.error('Failed to add student', err);
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -154,11 +122,11 @@ export const StudentRosterView: React.FC = () => {
               <Users className="w-5 h-5" />
             </span>
             <h1 className="text-xl sm:text-2xl font-extrabold text-[#1F2933]">
-              Assigned Students
+              Student Roster & Profiles
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#667085] mt-1">
-            Displaying students enrolled in your assigned classes (Class 5 & 6)
+            Displaying students enrolled in your assigned classes ({teacherClasses.map(c => `Class ${c}`).join(' & ')})
           </p>
         </div>
 
@@ -166,15 +134,6 @@ export const StudentRosterView: React.FC = () => {
           <Badge variant="green" size="lg">
             {filteredStudents.length} Students Active
           </Badge>
-          <Button
-            size="md"
-            variant="primary"
-            onClick={handleOpenAdd}
-            leftIcon={<UserPlus className="w-4 h-4" />}
-            className="shadow-sm shadow-[#0F6B50]/20"
-          >
-            Add Student
-          </Button>
         </div>
       </div>
 
@@ -189,14 +148,17 @@ export const StudentRosterView: React.FC = () => {
           />
         </div>
 
-        <div className="w-full sm:w-48">
+        <div className="w-full sm:w-56">
           <Select
             value={selectedClass}
             onChange={(e) => setSelectedClass(e.target.value)}
           >
-            <option value="ALL">All Assigned Classes (Class 5 & 6)</option>
-            <option value="5">Class 5</option>
-            <option value="6">Class 6</option>
+            <option value="ALL">All Assigned Classes ({teacherClasses.map(c => `Class ${c}`).join(' & ')})</option>
+            {teacherClasses.map(c => (
+              <option key={c} value={c}>
+                Class {c}
+              </option>
+            ))}
           </Select>
         </div>
       </div>
@@ -213,16 +175,6 @@ export const StudentRosterView: React.FC = () => {
               ? `No student matches "${searchQuery}". Try a different name or admission number.`
               : 'There are no students listed in this class yet.'}
           </p>
-          <div className="mt-4">
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={handleOpenAdd}
-              leftIcon={<Plus className="w-4 h-4" />}
-            >
-              Enroll Student Now
-            </Button>
-          </div>
         </Card>
       )}
 
@@ -260,14 +212,14 @@ export const StudentRosterView: React.FC = () => {
                       Class {student.class}
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className="font-black text-[#0F6B50]">{summary?.attendancePercentage || 94}%</span>
+                      <span className="font-black text-[#0F6B50]">{summary?.attendancePercentage ?? 0}%</span>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className="font-black text-[#1F2933]">{summary?.quranProgress || 90}%</span>
+                      <span className="font-black text-[#1F2933]">{summary?.quranProgress ?? 0}%</span>
                     </td>
                     <td className="py-3.5 px-4">
                       <span className="font-black text-[#084C3A] bg-[#DDEDE5] px-2 py-0.5 rounded-md">
-                        {summary?.overallProgress || 86}%
+                        {summary?.overallProgress ?? 0}%
                       </span>
                     </td>
                     <td className="py-3.5 px-4">
@@ -315,15 +267,15 @@ export const StudentRosterView: React.FC = () => {
                 <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-[#E3EAE6] text-center text-xs">
                   <div className="bg-[#FAF8F2] p-2 rounded-xl">
                     <p className="text-[9px] text-[#667085] font-bold uppercase">Quran</p>
-                    <p className="font-extrabold text-[#1F2933] mt-0.5">{summary?.quranProgress || 90}%</p>
+                    <p className="font-extrabold text-[#1F2933] mt-0.5">{summary?.quranProgress ?? 0}%</p>
                   </div>
                   <div className="bg-[#FAF8F2] p-2 rounded-xl">
                     <p className="text-[9px] text-[#667085] font-bold uppercase">Attendance</p>
-                    <p className="font-extrabold text-[#0F6B50] mt-0.5">{summary?.attendancePercentage || 94}%</p>
+                    <p className="font-extrabold text-[#0F6B50] mt-0.5">{summary?.attendancePercentage ?? 0}%</p>
                   </div>
                   <div className="bg-[#DDEDE5] p-2 rounded-xl">
                     <p className="text-[9px] text-[#084C3A] font-bold uppercase">Overall</p>
-                    <p className="font-black text-[#084C3A] mt-0.5">{summary?.overallProgress || 86}%</p>
+                    <p className="font-black text-[#084C3A] mt-0.5">{summary?.overallProgress ?? 0}%</p>
                   </div>
                 </div>
 
@@ -333,7 +285,7 @@ export const StudentRosterView: React.FC = () => {
                   className="w-full mt-3 text-xs"
                   onClick={() => setActiveStudent(student)}
                 >
-                  View & Edit Student Dossier
+                  <Eye className="w-3.5 h-3.5 mr-1" /> View Student Dossier
                 </Button>
               </Card>
             );
@@ -387,193 +339,6 @@ export const StudentRosterView: React.FC = () => {
           </div>
         </Modal>
       )}
-
-      {/* Add / Enroll Student Modal for Muallim */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title="Enroll Student to Classroom"
-        subtitle="Add a new student to your assigned Madrasa class roster"
-        maxWidth="2xl"
-      >
-        <form onSubmit={handleAddSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Student Full Name (English)"
-              placeholder="e.g. Muhammad Rayan"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-            <Input
-              label="Student Name (Malayalam)"
-              placeholder="e.g. മുഹമ്മദ് റയ്യാൻ"
-              value={malayalamName}
-              onChange={(e) => setMalayalamName(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input
-              label="Admission Number"
-              value={admissionNo}
-              onChange={(e) => setAdmissionNo(e.target.value)}
-              required
-            />
-            <Select
-              label="Gender"
-              value={gender}
-              onChange={(e) => setGender(e.target.value as Gender)}
-            >
-              <option value="MALE">Male (Boy)</option>
-              <option value="FEMALE">Female (Girl)</option>
-            </Select>
-            <Input
-              label="Date of Birth"
-              type="date"
-              value={dob}
-              onChange={(e) => setDob(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Assigned Class"
-              value={studentClass}
-              onChange={(e) => setStudentClass(e.target.value)}
-            >
-              <option value="5">Class 5</option>
-              <option value="6">Class 6</option>
-              <option value="1">Class 1</option>
-              <option value="2">Class 2</option>
-              <option value="3">Class 3</option>
-              <option value="4">Class 4</option>
-              <option value="7">Class 7</option>
-            </Select>
-
-            <Select
-              label="Blood Group"
-              value={bloodGroup}
-              onChange={(e) => setBloodGroup(e.target.value)}
-            >
-              <option value="O+">O+</option>
-              <option value="A+">A+</option>
-              <option value="B+">B+</option>
-              <option value="AB+">AB+</option>
-              <option value="O-">O-</option>
-              <option value="A-">A-</option>
-              <option value="B-">B-</option>
-              <option value="AB-">AB-</option>
-            </Select>
-          </div>
-
-          {/* Parent / Guardian Selection */}
-          <div className="p-3.5 rounded-2xl bg-[#FAF8F2] border border-[#E3EAE6] space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-[#1F2933]">Parent / Guardian Information</label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setParentType('EXISTING')}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
-                    parentType === 'EXISTING'
-                      ? 'bg-[#0F6B50] text-white shadow-xs'
-                      : 'bg-white text-[#667085] hover:bg-gray-100'
-                  }`}
-                >
-                  Existing Parent
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setParentType('NEW')}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
-                    parentType === 'NEW'
-                      ? 'bg-[#0F6B50] text-white shadow-xs'
-                      : 'bg-white text-[#667085] hover:bg-gray-100'
-                  }`}
-                >
-                  + New Parent
-                </button>
-              </div>
-            </div>
-
-            {parentType === 'EXISTING' ? (
-              <Select
-                value={parentId}
-                onChange={(e) => setParentId(e.target.value)}
-              >
-                {existingParents.length === 0 && (
-                  <option value="">No parents registered yet</option>
-                )}
-                {existingParents.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.phone})
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input
-                  label="Parent / Guardian Name"
-                  placeholder="e.g. Abdul Rahman"
-                  value={customParentName}
-                  onChange={(e) => setCustomParentName(e.target.value)}
-                  required={parentType === 'NEW'}
-                />
-                <Input
-                  label="Parent Contact Phone"
-                  placeholder="e.g. +91 98470 12345"
-                  value={customParentPhone}
-                  onChange={(e) => setCustomParentPhone(e.target.value)}
-                  required={parentType === 'NEW'}
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Admission Date"
-              type="date"
-              value={admissionDate}
-              onChange={(e) => setAdmissionDate(e.target.value)}
-              required
-            />
-            <Input
-              label="Residential Address (Optional)"
-              placeholder="e.g. Mundambra, Malappuram"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
-          </div>
-
-          <div className="p-3 bg-[#DDEDE5]/50 rounded-xl flex items-center gap-2 text-xs text-[#084C3A]">
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-[#0F6B50]" />
-            <span>Assigned Usthad: <strong>{user?.name || 'Usthad Shihabudheen Saadi'}</strong></span>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-[#E3EAE6]">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAddModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              isLoading={isSaving}
-              leftIcon={<UserPlus className="w-4 h-4" />}
-            >
-              Enroll Student
-            </Button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 };

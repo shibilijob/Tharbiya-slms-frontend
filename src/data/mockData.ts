@@ -1,7 +1,9 @@
 import {
   Student,
   ParentUser,
+  MuallimUser,
   TeacherUser,
+  SadhrMuallimUser,
   AdminUser,
   AttendanceRecord,
   AcademicAssessment,
@@ -17,10 +19,10 @@ import {
 
 export const CURRENT_MADRASA_NAME = "Darunnajath Mundambra";
 
-export const MOCK_ADMIN: AdminUser = {
+export const MOCK_ADMIN: SadhrMuallimUser = {
   id: "admin-1",
   name: "Shihabudheen Saadi",
-  role: "ADMIN",
+  role: "SADHR_MUALLIM",
   email: "sadhrmuallim@darunnajath.edu",
   phone: "9847001122",
   designation: "Sadhr Muallim (Sadhr Mudarris) & Class 7 Mentor",
@@ -29,7 +31,9 @@ export const MOCK_ADMIN: AdminUser = {
   madrasaName: CURRENT_MADRASA_NAME
 };
 
-export const MOCK_TEACHERS: TeacherUser[] = [];
+export const MOCK_SADHR = MOCK_ADMIN;
+export const MOCK_TEACHERS: MuallimUser[] = [];
+export const MOCK_MUALLIMS: MuallimUser[] = MOCK_TEACHERS;
 
 export const MOCK_PARENTS: ParentUser[] = [];
 

@@ -26,12 +26,81 @@ import {
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
 
+import { api } from '../../lib/axios';
+
 export const AkhlaqRemarksTeacherView: React.FC = () => {
   const { user } = useAuth();
   const { students, achievements, awardAchievement, getStudentSummary, akhlaqRecords } = useData();
   const { showToast, pushNotification } = useNotifications();
 
-  const teacherStudents = students.filter(s => s.class === '5' || s.class === '6');
+  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    api.get<any>('/faculty-members')
+      .then(res => {
+        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(teachers) && teachers.length > 0) {
+          const matched = teachers.find((t: any) =>
+            (user?.id && (t.id === user.id || t._id === user.id)) ||
+            (user?.email && t.email === user.email) ||
+            (user?.phone && t.phone === user.phone) ||
+            (user?.name && t.name && (
+              t.name.toLowerCase() === user.name.toLowerCase() ||
+              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
+              user.name.toLowerCase().includes(t.name.toLowerCase())
+            ))
+          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
+
+          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
+            const classes = matched.assignedClasses
+              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+              .filter(Boolean);
+            if (classes.length > 0) {
+              setDynamicClasses(classes);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Dynamic assigned classes for this Muallim
+  const teacherUser = user as any;
+  const teacherClasses = React.useMemo(() => {
+    if (dynamicClasses.length > 0) return dynamicClasses;
+
+    let rawList: any[] = [];
+    if (Array.isArray(teacherUser?.assignedClasses)) {
+      rawList = teacherUser.assignedClasses;
+    } else if (typeof teacherUser?.assignedClasses === 'string') {
+      try {
+        const parsed = JSON.parse(teacherUser.assignedClasses);
+        rawList = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        rawList = [teacherUser.assignedClasses];
+      }
+    } else if (teacherUser?.assignedClass) {
+      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+    }
+
+    const cleaned = rawList
+      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+      .filter(Boolean);
+
+    if (cleaned.length > 0) return cleaned;
+
+    const fromStudents = students
+      .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
+      .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
+    const unique = Array.from(new Set(fromStudents)).filter(Boolean);
+    return unique.length > 0 ? unique : ['4'];
+  }, [dynamicClasses, teacherUser, students, user]);
+
+  // Filter students assigned to teacher's assigned classes
+  const teacherStudents = students.filter(s => {
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+  });
 
   // Practical Score Modal state
   const [isPracticalScoreModalOpen, setIsPracticalScoreModalOpen] = useState(false);
@@ -173,23 +242,22 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
 
             <div className="space-y-3">
               {teacherStudents.map(student => {
-                const summ = getStudentSummary(student.id);
-                const akhlaqRec = akhlaqRecords.find(r => r.studentId === student.id);
+                const existingRecord = akhlaqRecords.find(r => r.studentId === student.id);
                 
                 let obtainedMarks = 0;
                 let maxMarks = 0;
-                if (akhlaqRec?.scores && Object.keys(akhlaqRec.scores).length > 0) {
-                  Object.values(akhlaqRec.scores).forEach(s => {
-                    obtainedMarks += s.score ?? 0;
+                if (existingRecord?.scores && Object.keys(existingRecord.scores).length > 0) {
+                  Object.values(existingRecord.scores).forEach(s => {
+                    obtainedMarks += s.score;
                     maxMarks += s.maxScore || 5;
                   });
                 } else {
                   const defaultList = practicalCriteriaService.getAll();
                   maxMarks = defaultList.reduce((acc, c) => acc + (c.maxScore || 5), 0) || 20;
-                  const pct = summ?.akhlaqScore || 90;
-                  obtainedMarks = Math.round((pct / 100) * maxMarks);
+                  obtainedMarks = 0;
                 }
-                const pct = maxMarks > 0 ? Math.round((obtainedMarks / maxMarks) * 100) : (summ?.akhlaqScore || 90);
+                const isEvaluated = Boolean(existingRecord?.scores && Object.keys(existingRecord.scores).length > 0);
+                const pct = (isEvaluated && maxMarks > 0) ? Math.round((obtainedMarks / maxMarks) * 100) : 0;
 
                 return (
                   <div
@@ -209,10 +277,10 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
                       <div className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <span className="text-xs sm:text-sm font-black text-[#1F2933] bg-white border border-[#E3EAE6] px-2.5 py-1 rounded-xl inline-block shadow-2xs">
-                            {obtainedMarks} / {maxMarks} Marks
+                            {isEvaluated ? `${obtainedMarks} / ${maxMarks} Marks` : 'Not Evaluated'}
                           </span>
                           <span className="text-xs sm:text-sm font-black text-[#084C3A] bg-[#DDEDE5] px-2.5 py-1 rounded-xl inline-block">
-                            {pct}%
+                            {isEvaluated ? `${pct}%` : '—'}
                           </span>
                         </div>
                         <p className="text-[9px] text-[#667085] font-bold uppercase mt-0.5">Practical Mark & Percentage</p>
@@ -238,15 +306,15 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
         <div className="lg:col-span-5 space-y-4">
           <Card className="p-5 sm:p-6 border-[#C9A227]/30">
             <h3 className="text-base font-bold text-[#1F2933] mb-4 pb-3 border-b border-[#E3EAE6] flex items-center justify-between">
-              <span>Awarded Badges ({achievements.length})</span>
+              <span>Awarded Badges ({achievements.filter(a => teacherStudents.some(s => s.id === a.studentId)).length})</span>
               <Button size="sm" variant="gold" onClick={() => setIsAwardModalOpen(true)}>
                 + Award Badge
               </Button>
             </h3>
 
             <div className="space-y-3">
-              {achievements.slice(0, 8).map(ach => {
-                const st = students.find(s => s.id === ach.studentId);
+              {achievements.filter(a => teacherStudents.some(s => s.id === a.studentId)).slice(0, 8).map(ach => {
+                const st = teacherStudents.find(s => s.id === ach.studentId);
                 return (
                   <div key={ach.id} className="p-3 rounded-2xl bg-gradient-to-br from-[#FAF8F2] to-[#FBF4DE] border border-[#C9A227]/30 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-[#C9A227]/20 text-[#9A7B1C] flex items-center justify-center shrink-0">

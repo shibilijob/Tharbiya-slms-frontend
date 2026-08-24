@@ -20,6 +20,7 @@ import {
   Filter
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
+import { api } from '../../lib/axios';
 
 export const AttendanceBatchMarker: React.FC = () => {
   const { user } = useAuth();
@@ -28,15 +29,82 @@ export const AttendanceBatchMarker: React.FC = () => {
 
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDate, setSelectedDate] = useState('2026-08-16');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSaving, setIsSaving] = useState(false);
+  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
 
-  // Filter students assigned to teacher (e.g. Classes 5 and 6)
-  const teacherStudents = students.filter(s => s.class === '5' || s.class === '6');
+  React.useEffect(() => {
+    api.get<any>('/faculty-members')
+      .then(res => {
+        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(teachers) && teachers.length > 0) {
+          const matched = teachers.find((t: any) =>
+            (user?.id && (t.id === user.id || t._id === user.id)) ||
+            (user?.email && t.email === user.email) ||
+            (user?.phone && t.phone === user.phone) ||
+            (user?.name && t.name && (
+              t.name.toLowerCase() === user.name.toLowerCase() ||
+              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
+              user.name.toLowerCase().includes(t.name.toLowerCase())
+            ))
+          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
+
+          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
+            const classes = matched.assignedClasses
+              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+              .filter(Boolean);
+            if (classes.length > 0) {
+              setDynamicClasses(classes);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Dynamic assigned classes for this Muallim
+  const teacherUser = user as any;
+  const teacherClasses = React.useMemo(() => {
+    if (dynamicClasses.length > 0) return dynamicClasses;
+
+    let rawList: any[] = [];
+    if (Array.isArray(teacherUser?.assignedClasses)) {
+      rawList = teacherUser.assignedClasses;
+    } else if (typeof teacherUser?.assignedClasses === 'string') {
+      try {
+        const parsed = JSON.parse(teacherUser.assignedClasses);
+        rawList = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        rawList = [teacherUser.assignedClasses];
+      }
+    } else if (teacherUser?.assignedClass) {
+      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+    }
+
+    const cleaned = rawList
+      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+      .filter(Boolean);
+
+    if (cleaned.length > 0) return cleaned;
+
+    const fromStudents = students
+      .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
+      .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
+    const unique = Array.from(new Set(fromStudents)).filter(Boolean);
+    return unique.length > 0 ? unique : ['4'];
+  }, [dynamicClasses, teacherUser, students, user]);
+
+  // Filter students assigned to teacher's assigned classes
+  const teacherStudents = students.filter(s => {
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+  });
 
   // Filter based on selected class and search query
   const filteredStudents = teacherStudents.filter(s => {
-    const matchesClass = selectedClass === 'ALL' || s.class === selectedClass;
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    const fClass = selectedClass.replace(/^Class\s*/i, '').trim();
+    const matchesClass = selectedClass === 'ALL' || sClass === fClass;
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (s.malayalamName && s.malayalamName.includes(searchQuery));
@@ -46,7 +114,7 @@ export const AttendanceBatchMarker: React.FC = () => {
   const [attendanceState, setAttendanceState] = useState<Record<string, { status: AttendanceStatus; remarks: string }>>(() => {
     const initial: Record<string, { status: AttendanceStatus; remarks: string }> = {};
     teacherStudents.forEach(s => {
-      const rec = attendance.find(a => a.studentId === s.id && a.date === '2026-08-16');
+      const rec = attendance.find(a => a.studentId === s.id && a.date === selectedDate);
       initial[s.id] = {
         status: rec?.status || 'PRESENT',
         remarks: rec?.remarks || ''
@@ -116,7 +184,7 @@ export const AttendanceBatchMarker: React.FC = () => {
       }));
 
       await batchMarkAttendance(updates, user?.id || 'teacher-1');
-      const classLabel = selectedClass === 'ALL' ? 'Class 5 & 6' : `Class ${selectedClass}`;
+      const classLabel = selectedClass === 'ALL' ? teacherClasses.map(c => `Class ${c}`).join(' & ') : `Class ${selectedClass}`;
       showToast(`✓ Attendance register for ${classLabel} (${formatDate(selectedDate)}) saved successfully!`);
     } catch (e) {
       console.error("Failed to save attendance", e);
@@ -143,7 +211,7 @@ export const AttendanceBatchMarker: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#667085] mt-1">
-            Mark daily attendance for {selectedClass === 'ALL' ? 'Class 5 & 6' : `Class ${selectedClass}`} students
+            Mark daily attendance for {selectedClass === 'ALL' ? teacherClasses.map(c => `Class ${c}`).join(' & ') : `Class ${selectedClass}`} students
           </p>
         </div>
 
@@ -180,9 +248,12 @@ export const AttendanceBatchMarker: React.FC = () => {
             value={selectedClass}
             onChange={(e) => setSelectedClass(e.target.value)}
           >
-            <option value="ALL">All Assigned Classes (Class 5 & 6)</option>
-            <option value="5">Class 5</option>
-            <option value="6">Class 6</option>
+            <option value="ALL">All Assigned Classes ({teacherClasses.map(c => `Class ${c}`).join(' & ')})</option>
+            {teacherClasses.map(c => (
+              <option key={c} value={c}>
+                Class {c}
+              </option>
+            ))}
           </Select>
         </div>
 
