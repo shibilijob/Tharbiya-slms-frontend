@@ -24,8 +24,12 @@ import { UpdateTimetableModal } from '../../features/teacher/UpdateTimetableModa
 import { UpdateSubjectsModal } from '../../features/teacher/UpdateSubjectsModal';
 import { UpdatePracticalScoreModal } from '../../features/teacher/UpdatePracticalScoreModal';
 
+import { useData } from '../../context/DataContext';
+import { api } from '../../lib/axios';
+
 export const TeacherLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const { students } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
@@ -33,6 +37,73 @@ export const TeacherLayout: React.FC = () => {
   const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
   const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
   const [isPracticalScoreModalOpen, setIsPracticalScoreModalOpen] = useState(false);
+
+  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    api.get<any>('/faculty-members')
+      .then(res => {
+        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(teachers) && teachers.length > 0) {
+          const matched = teachers.find((t: any) =>
+            (user?.id && (t.id === user.id || t._id === user.id)) ||
+            (user?.email && t.email === user.email) ||
+            (user?.phone && t.phone === user.phone) ||
+            (user?.name && t.name && (
+              t.name.toLowerCase() === user.name.toLowerCase() ||
+              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
+              user.name.toLowerCase().includes(t.name.toLowerCase())
+            ))
+          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
+
+          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
+            const classes = matched.assignedClasses
+              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+              .filter(Boolean);
+            if (classes.length > 0) {
+              setDynamicClasses(classes);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  const teacherUser = user as any;
+  const teacherClasses = React.useMemo(() => {
+    if (dynamicClasses.length > 0) return dynamicClasses;
+
+    let rawList: any[] = [];
+    if (Array.isArray(teacherUser?.assignedClasses)) {
+      rawList = teacherUser.assignedClasses;
+    } else if (typeof teacherUser?.assignedClasses === 'string') {
+      try {
+        const parsed = JSON.parse(teacherUser.assignedClasses);
+        rawList = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        rawList = [teacherUser.assignedClasses];
+      }
+    } else if (teacherUser?.assignedClass) {
+      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+    }
+
+    const cleaned = rawList
+      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+      .filter(Boolean);
+
+    if (cleaned.length > 0) return cleaned;
+
+    const fromStudents = students
+      .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
+      .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
+    const unique = Array.from(new Set(fromStudents)).filter(Boolean);
+    return unique;
+  }, [dynamicClasses, teacherUser, students, user]);
+
+  const teacherStudents = students.filter(s => {
+    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+  });
 
   // Mobile Bottom Navigation items (Thumb navigation)
   const bottomNavItems = [
@@ -75,7 +146,7 @@ export const TeacherLayout: React.FC = () => {
                   Assalamu Alaikum 👋
                 </span>
                 <p className="text-[10px] sm:text-xs text-[#0F6B50] font-semibold truncate max-w-[150px] sm:max-w-[200px]">
-                  {user?.name || "Usthad Shihabudheen Saadi"}
+                  {user?.name || "Usthad"}
                 </p>
               </div>
             </div>
@@ -83,14 +154,14 @@ export const TeacherLayout: React.FC = () => {
             {/* Right: Assigned Class & Logout */}
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="px-2.5 py-1 bg-[#DDEDE5] rounded-xl text-[11px] sm:text-xs font-bold text-[#084C3A]">
-                Class 5 & 6
+                {teacherClasses.length > 0 ? teacherClasses.map(c => `Class ${c}`).join(' & ') : 'Faculty'}
               </div>
 
               {/* Logout Button */}
               <button
                 onClick={async () => {
                   await logout();
-                  navigate('/login?role=TEACHER');
+                  navigate('/login?role=MUALLIM');
                 }}
                 className="p-2 rounded-xl text-[#667085] hover:text-rose-600 hover:bg-rose-50 border border-[#E3EAE6] hover:border-rose-200 transition-colors flex items-center gap-1.5"
                 title="Logout"
@@ -112,8 +183,12 @@ export const TeacherLayout: React.FC = () => {
             <div className="sticky top-24 bg-white rounded-2xl p-3 border border-[#E3EAE6] shadow-sm space-y-1.5">
               <div className="p-3 bg-[#FAF8F2] rounded-xl mb-2">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[#667085]">Faculty Mentorship</p>
-                <p className="text-sm font-extrabold text-[#084C3A] mt-0.5">Class 5 Division A</p>
-                <p className="text-[11px] text-[#667085] mt-0.5">25 Active Students</p>
+                <p className="text-sm font-extrabold text-[#084C3A] mt-0.5">
+                  {teacherClasses.length > 0 ? teacherClasses.map(c => `Class ${c}`).join(', ') : 'Assigned Classes'}
+                </p>
+                <p className="text-[11px] text-[#667085] mt-0.5">
+                  {teacherStudents.length} Active Students
+                </p>
               </div>
 
               {teacherNavItems.map(item => {

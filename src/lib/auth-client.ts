@@ -5,7 +5,7 @@ export interface BetterAuthCustomUser {
   id: string;
   name: string;
   email: string;
-  role?: 'PARENT' | 'TEACHER' | 'ADMIN' | 'SADHR_MUALLIM';
+  role?: 'PARENT' | 'MUALLIM' | 'SADHR_MUALLIM';
   phone?: string;
   designation?: string;
   madrasaName?: string;

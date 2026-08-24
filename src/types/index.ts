@@ -1,4 +1,4 @@
-export type UserRole = 'PARENT' | 'TEACHER' | 'ADMIN';
+export type UserRole = 'PARENT' | 'MUALLIM' | 'SADHR_MUALLIM';
 
 export interface User {
   id: string;
@@ -15,19 +15,21 @@ export interface ParentUser extends User {
   studentIds: string[];
 }
 
-export interface TeacherUser extends User {
-  role: 'TEACHER';
+export interface MuallimUser extends User {
+  role: 'MUALLIM';
   assignedClasses: string[]; // e.g. ["5A", "4B"]
   assignedSubjects: string[];
   designation: string; // e.g. "Senior Usthad / Quran Instructor"
 }
+export type TeacherUser = MuallimUser;
 
-export interface AdminUser extends User {
-  role: 'ADMIN';
+export interface SadhrMuallimUser extends User {
+  role: 'SADHR_MUALLIM';
   designation: string; // e.g. "Sadhr Muallim (Sadhr Mudarris) & Class 7 Mentor"
   assignedClasses: string[]; // e.g. ["7", "6"]
   assignedSubjects: string[]; // e.g. ["Fiqh", "Quran", "Islamic Studies"]
 }
+export type AdminUser = SadhrMuallimUser;
 
 export type Gender = 'MALE' | 'FEMALE';
 export type StudentStatus = 'ACTIVE' | 'INACTIVE';
@@ -225,4 +227,18 @@ export interface ClassInfo {
   studentCount: number;
   averageAttendance: number;
   averageProgress: number;
+}
+
+export type MadrasaDay = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
+
+export interface TimetablePeriod {
+  id: string;
+  periodNumber: number;
+  startTime: string;
+  endTime: string;
+  subject: SubjectName | string;
+  subjectMalayalam: string;
+  teacherName: string;
+  room: string;
+  notes?: string;
 }

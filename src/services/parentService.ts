@@ -197,6 +197,44 @@ export const parentService = {
     );
     return res.data;
   },
+
+  /**
+   * ==========================================
+   * Sadhr Muallim Parent Management
+   * ==========================================
+   */
+
+  /**
+   * Get all registered parents
+   */
+  async getAllParents(): Promise<any[]> {
+    const res = await api.get<any[]>("/sadhr/parents");
+    return res.data || [];
+  },
+
+  /**
+   * Register a new Parent in the database
+   */
+  async createParent(data: { name: string; phone: string; email?: string; password?: string }): Promise<any> {
+    const res = await api.post<any>("/sadhr/parents", data);
+    return res.data;
+  },
+
+  /**
+   * Update Parent details
+   */
+  async updateParent(id: string, data: { name?: string; phone?: string; email?: string; password?: string }): Promise<any> {
+    const res = await api.patch<any>(`/sadhr/parents/${id}`, data);
+    return res.data;
+  },
+
+  /**
+   * Delete Parent
+   */
+  async deleteParent(id: string): Promise<any> {
+    const res = await api.delete<any>(`/sadhr/parents/${id}`);
+    return res.data;
+  },
 };
 
 export default parentService;

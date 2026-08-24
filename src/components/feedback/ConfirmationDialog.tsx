@@ -12,6 +12,7 @@ interface ConfirmationDialogProps {
   confirmText?: string;
   cancelText?: string;
   isDestructive?: boolean;
+  variant?: 'danger' | 'primary';
   isLoading?: boolean;
 }
 
@@ -24,12 +25,14 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   isDestructive = false,
+  variant,
   isLoading = false
 }) => {
+  const isDanger = isDestructive || variant === 'danger';
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} maxWidth="sm">
       <div className="flex flex-col items-center text-center pt-2 pb-4">
-        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${isDestructive ? 'bg-rose-50 text-rose-600' : 'bg-[#DDEDE5] text-[#0F6B50]'}`}>
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${isDanger ? 'bg-rose-50 text-rose-600' : 'bg-[#DDEDE5] text-[#0F6B50]'}`}>
           <AlertTriangle className="w-6 h-6" />
         </div>
         <p className="text-sm text-[#667085] leading-relaxed mb-6">
@@ -45,7 +48,7 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
             {cancelText}
           </Button>
           <Button
-            variant={isDestructive ? 'danger' : 'primary'}
+            variant={isDanger ? 'danger' : 'primary'}
             className="flex-1"
             onClick={onConfirm}
             isLoading={isLoading}

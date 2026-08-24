@@ -8,7 +8,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 import { timetableService } from '../../services/timetableService';
 import { subjectService } from '../../services/subjectService';
-import { MadrasaDay, TimetablePeriod } from '../../data/mockTimetable';
+import { MadrasaDay, TimetablePeriod } from '../../types';
 import { SubjectMeta } from '../../data/madrasaCurriculum';
 import {
   CalendarDays,
@@ -28,6 +28,7 @@ interface UpdateTimetableModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialClass?: string;
+  assignedClasses?: string[];
   onUpdated?: () => void;
 }
 
@@ -45,12 +46,19 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
   isOpen,
   onClose,
   initialClass = '5',
+  assignedClasses,
   onUpdated
 }) => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
 
-  const [selectedClass, setSelectedClass] = useState(initialClass);
+  const teacherUser = user as any;
+  const rawAssigned: string[] = (assignedClasses && assignedClasses.length > 0)
+    ? assignedClasses
+    : ((teacherUser?.assignedClasses || []).map((c: any) => String(c).replace(/^Class\s*/i, '').trim()));
+  const availableClasses = rawAssigned.length > 0 ? rawAssigned : [initialClass || '5'];
+
+  const [selectedClass, setSelectedClass] = useState(initialClass || availableClasses[0]);
   const [selectedDay, setSelectedDay] = useState<MadrasaDay>('Sunday');
   const [periods, setPeriods] = useState<TimetablePeriod[]>([]);
   const [subjectsList, setSubjectsList] = useState<SubjectMeta[]>([]);
@@ -186,10 +194,11 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
               onChange={(e) => setSelectedClass(e.target.value)}
               className="py-1.5 text-xs font-bold"
             >
-              <option value="5">Class 5</option>
-              <option value="6">Class 6</option>
-              <option value="4">Class 4</option>
-              <option value="7">Class 7</option>
+              {availableClasses.map(c => (
+                <option key={c} value={c}>
+                  Class {c}
+                </option>
+              ))}
             </Select>
 
             <Button

@@ -21,10 +21,10 @@ export const LoginPage: React.FC = () => {
   const { login, loginWithGoogle } = useAuth();
 
   const roleParam = searchParams.get('role');
-  const initialPortal: 'PARENT' | 'TEACHER' =
-    roleParam === 'ADMIN' || roleParam === 'TEACHER' ? 'TEACHER' : 'PARENT';
+  const initialPortal: 'PARENT' | 'MUALLIM' =
+    roleParam === 'SADHR_MUALLIM' || roleParam === 'MUALLIM' || roleParam === 'ADMIN' || roleParam === 'TEACHER' ? 'MUALLIM' : 'PARENT';
 
-  const [selectedPortal, setSelectedPortal] = useState<'PARENT' | 'TEACHER'>(initialPortal);
+  const [selectedPortal, setSelectedPortal] = useState<'PARENT' | 'MUALLIM'>(initialPortal);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +32,8 @@ export const LoginPage: React.FC = () => {
 
   useEffect(() => {
     const param = searchParams.get('role');
-    if (param === 'ADMIN' || param === 'TEACHER') {
-      setSelectedPortal('TEACHER');
+    if (param === 'SADHR_MUALLIM' || param === 'MUALLIM' || param === 'ADMIN' || param === 'TEACHER') {
+      setSelectedPortal('MUALLIM');
     } else if (param === 'PARENT') {
       setSelectedPortal('PARENT');
     }
@@ -57,9 +57,9 @@ export const LoginPage: React.FC = () => {
 
     try {
       const loggedUser = await login(selectedPortal, identifier, password);
-      if (loggedUser.role === 'ADMIN') {
+      if (loggedUser.role === 'SADHR_MUALLIM') {
         navigate('/admin/dashboard');
-      } else if (loggedUser.role === 'TEACHER') {
+      } else if (loggedUser.role === 'MUALLIM') {
         navigate('/teacher/dashboard');
       } else {
         navigate('/parent/dashboard');
@@ -76,9 +76,9 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       const loggedUser = await loginWithGoogle(selectedPortal);
-      if (loggedUser.role === 'ADMIN') {
+      if (loggedUser.role === 'SADHR_MUALLIM') {
         navigate('/admin/dashboard');
-      } else if (loggedUser.role === 'TEACHER') {
+      } else if (loggedUser.role === 'MUALLIM') {
         navigate('/teacher/dashboard');
       } else {
         navigate('/parent/dashboard');
@@ -128,8 +128,8 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setSelectedPortal('TEACHER')}
-                className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${selectedPortal === 'TEACHER'
+                onClick={() => setSelectedPortal('MUALLIM')}
+                className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${selectedPortal === 'MUALLIM'
                     ? 'bg-[#0F6B50] text-white shadow-sm'
                     : 'text-[#667085] hover:text-[#1F2933]'
                   }`}
@@ -164,7 +164,7 @@ export const LoginPage: React.FC = () => {
           </div>
 
           {/* Google Auth for Muallim Portal */}
-          {selectedPortal === 'TEACHER' && (
+          {selectedPortal === 'MUALLIM' && (
             <div className="mb-5">
               <button
                 type="button"
@@ -243,7 +243,7 @@ export const LoginPage: React.FC = () => {
               </Button>
 
               <p className="mt-3 text-xs text-[#667085]">
-                {selectedPortal === 'TEACHER' ? (
+                {selectedPortal === 'MUALLIM' ? (
                   <>
                     Are you a Parent?{' '}
                     <button
@@ -259,7 +259,7 @@ export const LoginPage: React.FC = () => {
                     Are you a Muallim?{' '}
                     <button
                       type="button"
-                      onClick={() => setSelectedPortal('TEACHER')}
+                      onClick={() => setSelectedPortal('MUALLIM')}
                       className="font-bold text-[#0F6B50] hover:text-[#084C3A] hover:underline focus:outline-none transition-colors"
                     >
                       Login

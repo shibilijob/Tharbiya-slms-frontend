@@ -32,8 +32,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     // Role mismatch: redirect to user's assigned dashboard
-    if (user.role === 'ADMIN') return <Navigate to="/admin/dashboard" replace />;
-    if (user.role === 'TEACHER') return <Navigate to="/teacher/dashboard" replace />;
+    if (user.role === 'SADHR_MUALLIM') return <Navigate to="/admin/dashboard" replace />;
+    if (user.role === 'MUALLIM') return <Navigate to="/teacher/dashboard" replace />;
     return <Navigate to="/parent/dashboard" replace />;
   }
 

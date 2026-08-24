@@ -68,11 +68,11 @@ export const AppRoutes: React.FC = () => {
         <Route path="profile" element={<ParentProfileView />} />
       </Route>
 
-      {/* Teacher Portal */}
+      {/* Teacher / Muallim Portal */}
       <Route
         path="/teacher"
         element={
-          <ProtectedRoute allowedRoles={['TEACHER']}>
+          <ProtectedRoute allowedRoles={['MUALLIM']}>
             <TeacherLayout />
           </ProtectedRoute>
         }
@@ -86,11 +86,11 @@ export const AppRoutes: React.FC = () => {
         <Route path="akhlaq-remarks" element={<AkhlaqRemarksTeacherView />} />
       </Route>
 
-      {/* Admin / Sadhr Muallim Portal */}
+      {/* Sadhr Muallim Portal */}
       <Route
         path="/admin"
         element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
+          <ProtectedRoute allowedRoles={['SADHR_MUALLIM']}>
             <AdminLayout />
           </ProtectedRoute>
         }

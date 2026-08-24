@@ -85,7 +85,7 @@ export const AdminLayout: React.FC = () => {
               <button
                 onClick={async () => {
                   await logout();
-                  navigate('/login?role=ADMIN');
+                  navigate('/login?role=SADHR_MUALLIM');
                 }}
                 className="p-2 rounded-xl text-white/80 hover:text-white bg-white/10 hover:bg-rose-600/80 border border-white/10 transition-colors flex items-center gap-1.5"
                 title="Logout"

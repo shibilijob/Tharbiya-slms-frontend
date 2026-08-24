@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../../context/DataContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { Card } from '../../components/common/Card';
@@ -10,23 +10,38 @@ import { Select } from '../../components/common/Select';
 import { Avatar } from '../../components/common/Avatar';
 import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog';
 import { Student, Gender, StudentStatus } from '../../types';
+import { api } from '../../lib/axios';
 import {
   GraduationCap,
   Plus,
   Search,
   Edit2,
   Trash2,
-  Eye,
-  CheckCircle2,
-  XCircle,
-  Filter,
-  UserCheck,
+  Users,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { formatDate, getStatusBadgeClass } from '../../utils/formatters';
+import { formatDate } from '../../utils/formatters';
 
 const PAGE_SIZE = 20;
+
+interface ParentOption {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+}
+
+interface TeacherOption {
+  id: string;
+  name: string;
+  designation?: string;
+}
+
+interface ClassOption {
+  id: string;
+  name: string;
+}
 
 export const StudentManagerView: React.FC = () => {
   const { students, addStudent, updateStudent, deleteStudent } = useData();
@@ -37,32 +52,65 @@ export const StudentManagerView: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Dynamic dropdown data from backend
+  const [parentsList, setParentsList] = useState<ParentOption[]>([]);
+  const [classesList, setClassesList] = useState<ClassOption[]>([
+    { id: 'c1', name: 'Class 1' },
+    { id: 'c2', name: 'Class 2' },
+    { id: 'c3', name: 'Class 3' },
+    { id: 'c4', name: 'Class 4' },
+    { id: 'c5', name: 'Class 5' },
+    { id: 'c6', name: 'Class 6' },
+    { id: 'c7', name: 'Class 7' },
+  ]);
+
+  // Load parents and classes from the database
+  const loadDropdownData = async () => {
+    try {
+      // 1. Parents
+      api.get<any>('/sadhr/parents').then((res) => {
+        const raw = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(raw) && raw.length > 0) {
+          setParentsList(
+            raw.map((p: any) => ({
+              id: p.id || p._id,
+              name: p.name,
+              phone: p.phone,
+              email: p.email,
+            }))
+          );
+        }
+      }).catch(() => {});
+
+      // 2. Classes
+      api.get<any>('/sadhr/classes').then((res) => {
+        const raw = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (Array.isArray(raw) && raw.length > 0) {
+          const sorted = [...raw].sort((a: any, b: any) =>
+            a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+          );
+          setClassesList(
+            sorted.map((c: any) => ({
+              id: c.id || c._id,
+              name: c.name,
+            }))
+          );
+        }
+      }).catch(() => {});
+    } catch (err) {
+      console.error('Failed to load dropdown data:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadDropdownData();
+  }, []);
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Dynamic parents and teachers lists
-  const existingParents = React.useMemo(() => {
-    const map = new Map<string, { id: string; name: string; phone: string }>();
-    students.forEach(s => {
-      if (s.parentId && s.parentName && !map.has(s.parentId)) {
-        map.set(s.parentId, { id: s.parentId, name: s.parentName, phone: s.parentPhone || '' });
-      }
-    });
-    return Array.from(map.values());
-  }, [students]);
-
-  const existingTeachers = React.useMemo(() => {
-    const map = new Map<string, { id: string; name: string }>();
-    students.forEach(s => {
-      if (s.assignedTeacherId && s.teacherName && !map.has(s.assignedTeacherId)) {
-        map.set(s.assignedTeacherId, { id: s.assignedTeacherId, name: s.teacherName });
-      }
-    });
-    return Array.from(map.values());
-  }, [students]);
 
   // Form fields
   const [name, setName] = useState('');
@@ -72,16 +120,16 @@ export const StudentManagerView: React.FC = () => {
   const [dob, setDob] = useState('2015-05-14');
   const [studentClass, setStudentClass] = useState('5');
   const [parentId, setParentId] = useState('');
-  const [assignedTeacherId, setAssignedTeacherId] = useState('');
   const [admissionDate, setAdmissionDate] = useState('2022-06-01');
   const [status, setStatus] = useState<StudentStatus>('ACTIVE');
-  const [bloodGroup, setBloodGroup] = useState('O+');
 
   const filteredStudents = students.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (s.malayalamName && s.malayalamName.includes(searchQuery));
-    const matchesClass = selectedClass === 'ALL' || s.class === selectedClass;
+    const cleanCls = String(s.class).replace(/^Class\s*/i, '');
+    const filterCls = selectedClass.replace(/^Class\s*/i, '');
+    const matchesClass = selectedClass === 'ALL' || cleanCls === filterCls;
     const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
     return matchesSearch && matchesClass && matchesStatus;
   });
@@ -114,12 +162,11 @@ export const StudentManagerView: React.FC = () => {
     setAdmissionNo(`DN-2026-${Math.floor(100 + Math.random() * 900)}`);
     setGender('MALE');
     setDob('2015-05-14');
-    setStudentClass('5');
-    setParentId(existingParents[0]?.id || `parent-${Date.now()}`);
-    setAssignedTeacherId(existingTeachers[0]?.id || 'teacher-1');
+    const firstCls = classesList[0]?.name.replace(/^Class\s*/i, '') || '1';
+    setStudentClass(firstCls);
+    setParentId(parentsList[0]?.id || '');
     setAdmissionDate(new Date().toISOString().split('T')[0]);
     setStatus('ACTIVE');
-    setBloodGroup('O+');
     setIsModalOpen(true);
   };
 
@@ -129,13 +176,11 @@ export const StudentManagerView: React.FC = () => {
     setMalayalamName(student.malayalamName || '');
     setAdmissionNo(student.admissionNo);
     setGender(student.gender);
-    setDob(student.dob);
-    setStudentClass(student.class);
-    setParentId(student.parentId);
-    setAssignedTeacherId(student.assignedTeacherId);
-    setAdmissionDate(student.admissionDate);
-    setStatus(student.status);
-    setBloodGroup(student.bloodGroup || 'O+');
+    setDob(student.dob || '2015-05-14');
+    setStudentClass(String(student.class).replace(/^Class\s*/i, ''));
+    setParentId(student.parentId || '');
+    setAdmissionDate(student.admissionDate || new Date().toISOString().split('T')[0]);
+    setStatus(student.status || 'ACTIVE');
     setIsModalOpen(true);
   };
 
@@ -145,47 +190,40 @@ export const StudentManagerView: React.FC = () => {
 
     setIsSaving(true);
     try {
-      const parentObj = existingParents.find(p => p.id === parentId);
-      const teacherObj = existingTeachers.find(t => t.id === assignedTeacherId);
-
+      const parentObj = parentsList.find(p => p.id === parentId);
       const parentName = parentObj?.name || 'Parent';
       const parentPhone = parentObj?.phone || '+91 98470 00000';
-      const teacherName = teacherObj?.name || 'Usthad Shihabudheen Saadi';
 
       if (editingStudent) {
         await updateStudent(editingStudent.id, {
-          name,
-          malayalamName,
-          admissionNo,
+          name: name.trim(),
+          malayalamName: malayalamName.trim(),
+          admissionNo: admissionNo.trim(),
           gender,
           dob,
           class: studentClass,
-          parentId: parentId || `parent-${Date.now()}`,
+          parentId: parentId || '',
           parentName,
           parentPhone,
-          assignedTeacherId: assignedTeacherId || 'teacher-1',
-          teacherName,
           admissionDate,
           status,
-          bloodGroup
         });
         showToast(`✓ Student ${name} updated successfully!`);
       } else {
         await addStudent({
-          name,
-          malayalamName,
-          admissionNo,
+          name: name.trim(),
+          malayalamName: malayalamName.trim(),
+          admissionNo: admissionNo.trim(),
           gender,
           dob,
           class: studentClass,
-          parentId: parentId || `parent-${Date.now()}`,
+          parentId: parentId || '',
           parentName,
           parentPhone,
-          assignedTeacherId: assignedTeacherId || 'teacher-1',
-          teacherName,
+          assignedTeacherId: 'teacher-1',
+          teacherName: 'Usthad Shihabudheen Saadi',
           admissionDate,
           status,
-          bloodGroup
         });
         showToast(`✓ New student ${name} enrolled successfully!`);
       }
@@ -222,7 +260,7 @@ export const StudentManagerView: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#667085] mt-1">
-            Enroll students, assign teachers, link parents, and manage admission records
+            Enroll students, assign classes, link parents, and manage admission records
           </p>
         </div>
 
@@ -249,23 +287,24 @@ export const StudentManagerView: React.FC = () => {
           value={selectedClass}
           onChange={(e) => handleClassChange(e.target.value)}
         >
-          <option value="ALL">All Classes (1 - 7)</option>
-          <option value="1">Class 1</option>
-          <option value="2">Class 2</option>
-          <option value="3">Class 3</option>
-          <option value="4">Class 4</option>
-          <option value="5">Class 5</option>
-          <option value="6">Class 6</option>
-          <option value="7">Class 7</option>
+          <option value="ALL">All Classes</option>
+          {classesList.map((c) => {
+            const clsVal = c.name.replace(/^Class\s*/i, '') || c.name;
+            return (
+              <option key={c.id || c.name} value={clsVal}>
+                {c.name}
+              </option>
+            );
+          })}
         </Select>
 
         <Select
           value={selectedStatus}
           onChange={(e) => handleStatusChange(e.target.value)}
         >
-          <option value="ALL">All Statuses</option>
-          <option value="ACTIVE">Active</option>
-          <option value="INACTIVE">Inactive</option>
+          <option value="ALL">All Statuses (Active & Inactive)</option>
+          <option value="ACTIVE">Active Students</option>
+          <option value="INACTIVE">Inactive Students</option>
         </Select>
       </div>
 
@@ -298,44 +337,52 @@ export const StudentManagerView: React.FC = () => {
                       <Avatar name={student.name} gender={student.gender} size="md" />
                       <div>
                         <p className="font-bold text-[#1F2933] text-sm">{student.name}</p>
-                        <p className="font-malayalam text-[11px] text-[#0F6B50] font-semibold">{student.malayalamName}</p>
-                        <p className="text-[10px] text-[#667085]">Adm: {student.admissionNo}</p>
+                        {student.malayalamName && (
+                          <p className="font-malayalam text-xs text-[#0F6B50] font-semibold">{student.malayalamName}</p>
+                        )}
+                        <p className="text-[10px] text-[#667085]">Adm: {student.admissionNo} • {student.gender}</p>
                       </div>
                     </div>
                   </td>
                   <td className="py-3.5 px-4 font-bold text-[#1F2933]">
-                    Class {student.class}
+                    <span className="px-2.5 py-1 rounded-xl bg-[#DDEDE5] text-[#084C3A] text-xs font-black">
+                      Class {student.class}
+                    </span>
                   </td>
                   <td className="py-3.5 px-4">
                     <p className="font-bold text-[#1F2933]">{student.parentName}</p>
                     <p className="text-[10px] text-[#667085]">{student.parentPhone}</p>
                   </td>
-                  <td className="py-3.5 px-4 font-medium text-[#1F2933]">
+                  <td className="py-3.5 px-4 font-semibold text-[#1F2933]">
                     {student.teacherName}
                   </td>
                   <td className="py-3.5 px-4 text-[#667085]">
                     {formatDate(student.admissionDate)}
                   </td>
                   <td className="py-3.5 px-4">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${getStatusBadgeClass(student.status)}`}>
+                    <Badge variant={student.status === 'ACTIVE' ? 'green' : 'gray'} size="sm">
                       {student.status}
-                    </span>
+                    </Badge>
                   </td>
-                  <td className="py-3.5 px-4 text-right space-x-1">
-                    <button
-                      onClick={() => handleOpenEdit(student)}
-                      className="p-1.5 rounded-lg text-[#0F6B50] hover:bg-[#DDEDE5] transition-colors"
-                      title="Edit Student"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeletingStudentId(student.id)}
-                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
-                      title="Delete Student"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <td className="py-3.5 px-4 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenEdit(student)}
+                        className="text-xs"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 mr-1 text-[#0F6B50]" /> Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => setDeletingStudentId(student.id)}
+                        className="text-xs"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -362,7 +409,7 @@ export const StudentManagerView: React.FC = () => {
                     <p className="text-[10px] text-[#667085]">Class {student.class} • Adm: {student.admissionNo}</p>
                   </div>
                 </div>
-                <Badge variant="green" size="sm">{student.status}</Badge>
+                <Badge variant={student.status === 'ACTIVE' ? 'green' : 'gray'} size="sm">{student.status}</Badge>
               </div>
 
               <div className="mt-3 pt-3 border-t border-[#E3EAE6] text-xs space-y-1">
@@ -390,9 +437,6 @@ export const StudentManagerView: React.FC = () => {
             Showing <span className="font-bold text-[#1F2933]">{startIndex + 1}</span> to{' '}
             <span className="font-bold text-[#1F2933]">{endIndex}</span> of{' '}
             <span className="font-bold text-[#1F2933]">{totalStudents}</span> students
-            <span className="ml-2 px-2 py-0.5 rounded-full bg-[#FAF8F2] border border-[#E3EAE6] text-[10px] font-semibold text-[#0F6B50]">
-              Limit: 20 / page
-            </span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -408,44 +452,27 @@ export const StudentManagerView: React.FC = () => {
 
             <div className="flex items-center gap-1 px-1">
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
-                if (
-                  pageNum === 1 ||
-                  pageNum === totalPages ||
-                  (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
-                ) {
-                  const isActive = pageNum === currentPage;
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`min-w-8 h-8 px-2 rounded-lg text-xs font-bold transition-colors ${
-                        isActive
-                          ? 'bg-[#0F6B50] text-white shadow-sm'
-                          : 'text-[#667085] hover:bg-[#FAF8F2] hover:text-[#1F2933] border border-transparent hover:border-[#E3EAE6]'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                }
-                if (
-                  (pageNum === 2 && currentPage > 3) ||
-                  (pageNum === totalPages - 1 && currentPage < totalPages - 2)
-                ) {
-                  return (
-                    <span key={pageNum} className="text-xs text-[#667085] px-1">
-                      ...
-                    </span>
-                  );
-                }
-                return null;
+                const isActive = pageNum === currentPage;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                      isActive
+                        ? 'bg-[#0F6B50] text-white shadow-xs'
+                        : 'bg-[#FAF8F2] text-[#667085] hover:bg-[#DDEDE5] hover:text-[#0F6B50]'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
               })}
             </div>
 
             <Button
               size="sm"
               variant="outline"
-              disabled={currentPage >= totalPages}
+              disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               rightIcon={<ChevronRight className="w-4 h-4" />}
             >
@@ -510,13 +537,14 @@ export const StudentManagerView: React.FC = () => {
               value={studentClass}
               onChange={(e) => setStudentClass(e.target.value)}
             >
-              <option value="1">Class 1</option>
-              <option value="2">Class 2</option>
-              <option value="3">Class 3</option>
-              <option value="4">Class 4</option>
-              <option value="5">Class 5</option>
-              <option value="6">Class 6</option>
-              <option value="7">Class 7</option>
+              {classesList.map((c) => {
+                const clsVal = c.name.replace(/^Class\s*/i, '') || c.name;
+                return (
+                  <option key={c.id || c.name} value={clsVal}>
+                    {c.name}
+                  </option>
+                );
+              })}
             </Select>
 
             <Select
@@ -535,47 +563,20 @@ export const StudentManagerView: React.FC = () => {
               value={parentId}
               onChange={(e) => setParentId(e.target.value)}
             >
-              {existingParents.length === 0 ? (
-                <option value="">Default Parent</option>
-              ) : (
-                existingParents.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.phone})
-                  </option>
-                ))
-              )}
+              <option value="">-- Select Parent / Guardian --</option>
+              {parentsList.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.phone})
+                </option>
+              ))}
             </Select>
 
-            <Select
-              label="Assign Class Usthad / Mentor"
-              value={assignedTeacherId}
-              onChange={(e) => setAssignedTeacherId(e.target.value)}
-            >
-              {existingTeachers.length === 0 ? (
-                <option value="teacher-1">Usthad Shihabudheen Saadi</option>
-              ) : (
-                existingTeachers.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))
-              )}
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <Input
               label="Admission Date"
               type="date"
               value={admissionDate}
               onChange={(e) => setAdmissionDate(e.target.value)}
               required
-            />
-            <Input
-              label="Blood Group"
-              placeholder="e.g. O+, B+, A+"
-              value={bloodGroup}
-              onChange={(e) => setBloodGroup(e.target.value)}
             />
           </div>
 
@@ -598,7 +599,7 @@ export const StudentManagerView: React.FC = () => {
         title="Delete Student Record"
         message="Are you sure you want to remove this student record from Darunnajath registry? This action cannot be undone."
         confirmText="Delete Student"
-        isDestructive
+        variant="danger"
       />
     </div>
   );

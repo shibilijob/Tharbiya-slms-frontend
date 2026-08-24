@@ -1,5 +1,15 @@
-import { MadrasaDay, TimetablePeriod, DEFAULT_EMPTY_WEEK_SCHEDULE } from '../data/mockTimetable';
+import { MadrasaDay, TimetablePeriod } from '../types';
 import { api } from '../lib/axios';
+
+const DEFAULT_EMPTY_WEEK_SCHEDULE: Record<MadrasaDay, TimetablePeriod[]> = {
+  Sunday: [],
+  Monday: [],
+  Tuesday: [],
+  Wednesday: [],
+  Thursday: [],
+  Friday: [],
+  Saturday: []
+};
 
 const TIMETABLE_STORAGE_KEY = 'tharbiyah_timetables';
 
