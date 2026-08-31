@@ -75,17 +75,10 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setIsLoading(true);
     try {
-      const loggedUser = await loginWithGoogle(selectedPortal);
-      if (loggedUser.role === 'SADHR_MUALLIM') {
-        navigate('/admin/dashboard');
-      } else if (loggedUser.role === 'MUALLIM') {
-        navigate('/teacher/dashboard');
-      } else {
-        navigate('/parent/dashboard');
-      }
+      await loginWithGoogle(selectedPortal);
+      // OAuth redirect will take over the browser window
     } catch (err: any) {
       setError(err.message || 'Google sign-in failed.');
-    } finally {
       setIsLoading(false);
     }
   };

@@ -10,7 +10,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (role: UserRole, identifier: string, password?: string) => Promise<User>;
-  loginWithGoogle: (role: UserRole) => Promise<User>;
+  loginWithGoogle: (role: UserRole) => Promise<void>;
   logout: () => void;
   switchRole: (role: UserRole) => Promise<User>;
 }
@@ -25,10 +25,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (session?.user) {
       const current = authService.getCurrentUser();
-      if (current) {
+      if (!current || (current.email && session.user.email && current.email !== session.user.email)) {
+        const synced = authService.syncSessionUser(session.user);
+        setUser(synced);
+      } else {
         setUser(current);
       }
-    } else {
+    } else if (!isPending) {
       const current = authService.getCurrentUser();
       setUser(current);
     }
@@ -89,9 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async (role: UserRole) => {
     setIsLoading(true);
     try {
-      const loggedUser = await authService.loginWithGoogle(role);
-      setUser(loggedUser);
-      return loggedUser;
+      await authService.loginWithGoogle(role);
     } finally {
       setIsLoading(false);
     }

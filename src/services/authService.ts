@@ -11,7 +11,7 @@ const normalizeRole = (rawRole: any): UserRole => {
   return 'PARENT';
 };
 
-const mapBetterAuthUserToAppUser = (authUser: any, targetRole?: UserRole): User => {
+export const mapBetterAuthUserToAppUser = (authUser: any, targetRole?: UserRole): User => {
   const role: UserRole = normalizeRole(authUser.role || targetRole);
 
   let assignedClasses: string[] = [];
@@ -119,6 +119,19 @@ export const authService = {
     return null;
   },
 
+  syncSessionUser(authUser: any, fallbackRole?: UserRole): User {
+    const savedRole = (sessionStorage.getItem('pending_oauth_role') as UserRole) || fallbackRole;
+    const appUser = mapBetterAuthUserToAppUser(authUser, savedRole);
+    const token = `sess_${appUser.id}_${Date.now()}`;
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(appUser));
+    if (!localStorage.getItem('tharbiyah_auth_token')) {
+      localStorage.setItem('tharbiyah_auth_token', token);
+      localStorage.setItem('token', token);
+    }
+    sessionStorage.removeItem('pending_oauth_role');
+    return appUser;
+  },
+
   async login(role: UserRole, identifier: string, password?: string): Promise<User> {
     const pwd = password || '';
 
@@ -223,25 +236,22 @@ export const authService = {
     return user;
   },
 
-  async loginWithGoogle(role: UserRole): Promise<User> {
-    try {
-      const callbackURL = role === 'SADHR_MUALLIM' ? '/admin/dashboard' : '/teacher/dashboard';
-      const result = await authClient.signIn.social({
-        provider: 'google',
-        callbackURL,
-      });
+  async loginWithGoogle(role: UserRole): Promise<void> {
+    const redirectPath = role === 'SADHR_MUALLIM' ? '/admin/dashboard' : role === 'PARENT' ? '/parent/dashboard' : '/teacher/dashboard';
+    const callbackURL = `${window.location.origin}${redirectPath}`;
+    
+    // Save intended portal role in session storage for after OAuth callback
+    sessionStorage.setItem('pending_oauth_role', role);
 
-      const resData = result?.data as any;
-      if (resData?.user) {
-        const appUser = mapBetterAuthUserToAppUser(resData.user, role);
-        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(appUser));
-        return appUser;
-      }
-    } catch (err: any) {
-      console.warn("Better Auth Google login attempt:", err?.message || err);
+    const result = await authClient.signIn.social({
+      provider: 'google',
+      callbackURL,
+    });
+
+    if (result?.error) {
+      sessionStorage.removeItem('pending_oauth_role');
+      throw new Error(result.error.message || 'Google sign-in initiation failed.');
     }
-
-    return this.switchRole(role);
   },
 
   async logout(): Promise<void> {
@@ -251,5 +261,8 @@ export const authService = {
       console.warn("Better Auth sign out:", e);
     }
     localStorage.removeItem(AUTH_USER_KEY);
+    localStorage.removeItem('tharbiyah_auth_token');
+    localStorage.removeItem('token');
+    sessionStorage.removeItem('pending_oauth_role');
   }
 };
