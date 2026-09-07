@@ -44,6 +44,7 @@ export const AdminLayout: React.FC = () => {
   ];
 
   const moreMenuItems = [
+    { label: 'My Muallim Dashboard', path: '/teacher/dashboard', icon: <GraduationCap className="w-5 h-5 text-[#0F6B50]" /> },
     { label: 'Parent Management', path: '/admin/parents', icon: <UserSquare2 className="w-5 h-5 text-[#0F6B50]" /> },
     { label: 'Class Management', path: '/admin/classes', icon: <Layers className="w-5 h-5 text-[#C9A227]" /> }
   ];
@@ -73,6 +74,17 @@ export const AdminLayout: React.FC = () => {
 
             {/* Right: Admin User & Role Switcher */}
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Quick Switch to Muallim View */}
+              <Link
+                to="/teacher/dashboard"
+                className="px-3 py-1.5 rounded-xl bg-[#C9A227] hover:bg-[#b59120] text-[#084C3A] font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+                title="Switch to My Muallim Dashboard"
+              >
+                <GraduationCap className="w-4 h-4 text-[#084C3A]" />
+                <span className="hidden sm:inline">My Muallim Dashboard</span>
+                <span className="sm:hidden">Muallim View</span>
+              </Link>
+
               <div className="hidden sm:flex items-center gap-2 pl-2">
                 <Avatar name={user?.name || "Sadhr Muallim"} size="sm" ring />
                 <div className="text-left">
@@ -131,6 +143,25 @@ export const AdminLayout: React.FC = () => {
                   </Link>
                 );
               })}
+
+              {/* Dedicated Switcher to My Muallim View */}
+              <div className="pt-3 mt-3 border-t border-[#E3EAE6]">
+                <Link
+                  to="/teacher/dashboard"
+                  className="flex items-center justify-between p-3 rounded-xl bg-[#FAF8F2] hover:bg-[#DDEDE5] text-[#084C3A] font-bold text-xs border border-[#0F6B50]/20 transition-all group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-[#0F6B50] text-white">
+                      <GraduationCap className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="leading-tight">My Muallim View</p>
+                      <p className="text-[10px] text-[#667085] font-normal">Classroom Workspace</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#0F6B50] group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              </div>
             </div>
           </aside>
 

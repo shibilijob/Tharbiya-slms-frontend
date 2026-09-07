@@ -264,5 +264,35 @@ export const authService = {
     localStorage.removeItem('tharbiyah_auth_token');
     localStorage.removeItem('token');
     sessionStorage.removeItem('pending_oauth_role');
+  },
+
+  async verifyMuallim(email: string): Promise<{
+    name: string;
+    email: string;
+    phone: string;
+    designation?: string;
+    role: string;
+  }> {
+    const res: any = await api.post('/auth/verify-muallim', { email: email.trim().toLowerCase() });
+    return res.data || res;
+  },
+
+  async sendMuallimResetEmail(email: string): Promise<{ success: boolean; message: string; email: string; name: string }> {
+    const res: any = await api.post('/auth/forgot-password/muallim', { email: email.trim().toLowerCase() });
+    return res;
+  },
+
+  async resetPasswordWithToken(data: { token?: string; email?: string; newPassword: string; confirmPassword?: string }): Promise<any> {
+    const res: any = await api.post('/auth/reset-password-token', data);
+    return res;
+  },
+
+  async resetMuallimPassword(email: string, newPassword: string, confirmPassword?: string): Promise<any> {
+    const res: any = await api.post('/auth/reset-password/muallim', {
+      email: email.trim().toLowerCase(),
+      newPassword,
+      confirmPassword: confirmPassword || newPassword,
+    });
+    return res;
   }
 };

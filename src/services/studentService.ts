@@ -23,13 +23,13 @@ const mapBackendStudentToFrontend = (s: any): Student => ({
   name: s.name,
   malayalamName: s.nameMalayalam || s.malayalamName || '',
   gender: s.gender || 'MALE',
-  class: s.classId?.name?.replace(/^Class\s*/i, '') || s.class || '5',
+  class: s.className?.replace(/^Class\s*/i, '') || s.classId?.name?.replace(/^Class\s*/i, '') || s.class || '5',
   status: s.isActive !== false ? 'ACTIVE' : 'INACTIVE',
   parentId: s.parentId?._id || s.parentId || '',
   parentName: s.parentId?.name || s.parentName || 'Parent',
   parentPhone: s.parentId?.phone || s.parentPhone || '',
-  assignedTeacherId: s.classId?.classTeacherId?._id || s.classId?.classTeacherId || 'teacher-1',
-  teacherName: s.classId?.classTeacherId?.name || s.teacherName || 'Usthad Shihabudheen Saadi',
+  assignedTeacherId: s.teacherId || s.classId?.classTeacherId?._id || s.classId?.classTeacherId || 'teacher-1',
+  teacherName: s.teacherName || s.classId?.classTeacherId?.name || 'Usthad Shihabudheen Saadi',
   dob: s.dateOfBirth ? new Date(s.dateOfBirth).toISOString().split('T')[0] : '2015-05-14',
   admissionDate: s.admissionDate ? new Date(s.admissionDate).toISOString().split('T')[0] : '2024-06-01',
   bloodGroup: s.bloodGroup || 'B+'
@@ -37,6 +37,30 @@ const mapBackendStudentToFrontend = (s: any): Student => ({
 
 export const studentService = {
   async getAll(params?: { page?: number; limit?: number; search?: string; classId?: string; status?: string }): Promise<Student[]> {
+    // 1. Check if logged in user is a Parent
+    const authData = localStorage.getItem('tharbiyah_auth_user');
+    let isParent = false;
+    if (authData) {
+      try {
+        const u = JSON.parse(authData);
+        if (u?.role === 'PARENT') isParent = true;
+      } catch {}
+    }
+
+    if (isParent) {
+      try {
+        const parentRes = await api.get<any>('/parent/children');
+        const rawChildren = Array.isArray(parentRes.data) ? parentRes.data : (parentRes.data?.data || []);
+        if (Array.isArray(rawChildren) && rawChildren.length > 0) {
+          const mapped = rawChildren.map(mapBackendStudentToFrontend);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
+          return mapped;
+        }
+      } catch (pErr) {
+        console.warn("Backend /parent/children error:", pErr);
+      }
+    }
+
     try {
       const queryParams: Record<string, any> = { limit: params?.limit || 100 };
       if (params?.page) queryParams.page = params.page;
@@ -52,7 +76,19 @@ export const studentService = {
         return mapped;
       }
     } catch (err) {
-      console.warn("Backend /sadhr/students unavailable, using local cache", err);
+      console.warn("Backend /sadhr/students unavailable, checking parent or local cache", err);
+      // Fallback: try parent endpoint if not already tried
+      if (!isParent) {
+        try {
+          const parentRes = await api.get<any>('/parent/children');
+          const rawChildren = Array.isArray(parentRes.data) ? parentRes.data : (parentRes.data?.data || []);
+          if (Array.isArray(rawChildren) && rawChildren.length > 0) {
+            const mapped = rawChildren.map(mapBackendStudentToFrontend);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
+            return mapped;
+          }
+        } catch {}
+      }
     }
 
     const data = localStorage.getItem(STORAGE_KEY);

@@ -1,18 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { authService } from '../../services/authService';
 import type { UserRole } from '../../types';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { Logo } from '../../components/common/Logo';
+import { Modal } from '../../components/common/Modal';
 import {
   Users,
   GraduationCap,
   Phone,
   Lock,
   Mail,
-  ArrowRight
+  ArrowRight,
+  KeyRound,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  ShieldCheck,
+  Sparkles,
+  AlertCircle
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -28,7 +37,26 @@ export const LoginPage: React.FC = () => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Forgot Password Modal State (Muallim Portal Only)
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'IDENTIFY' | 'RESET' | 'SUCCESS'>('IDENTIFY');
+  const [resetIdentifier, setResetIdentifier] = useState('');
+  const [verifiedMuallim, setVerifiedMuallim] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+    designation?: string;
+    role: string;
+  } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
 
   useEffect(() => {
     const param = searchParams.get('role');
@@ -44,6 +72,7 @@ export const LoginPage: React.FC = () => {
     setIdentifier('');
     setPassword('');
     setError(null);
+    setSuccessMsg(null);
   }, [selectedPortal]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -53,6 +82,7 @@ export const LoginPage: React.FC = () => {
       return;
     }
     setError(null);
+    setSuccessMsg(null);
     setIsLoading(true);
 
     try {
@@ -83,6 +113,107 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  // Muallim Forgot Password Handlers (Email Only & Brevo)
+  const handleOpenForgotPassword = () => {
+    // If current identifier is a valid email, prepopulate; otherwise start blank
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    setResetIdentifier(emailRegex.test(identifier.trim()) ? identifier.trim() : '');
+    setForgotStep('IDENTIFY');
+    setForgotError(null);
+    setVerifiedMuallim(null);
+    setNewPassword('');
+    setConfirmPassword('');
+    setIsForgotModalOpen(true);
+  };
+
+  const handleSendResetEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = resetIdentifier.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!cleanEmail) {
+      setForgotError('Please enter your registered Usthad email address.');
+      return;
+    }
+
+    if (!emailRegex.test(cleanEmail)) {
+      setForgotError('Please enter a valid email address (e.g. usthad@darunnajath.edu). Phone numbers cannot be used for password recovery.');
+      return;
+    }
+
+    setForgotError(null);
+    setForgotLoading(true);
+
+    try {
+      await authService.sendMuallimResetEmail(cleanEmail);
+      setForgotStep('SUCCESS');
+    } catch (err: any) {
+      setForgotError(err?.message || 'Failed to send password reset email. Please verify your email address.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleVerifyMuallim = async () => {
+    const cleanEmail = resetIdentifier.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!cleanEmail) {
+      setForgotError('Please enter your registered Usthad email address.');
+      return;
+    }
+
+    if (!emailRegex.test(cleanEmail)) {
+      setForgotError('Please enter a valid email address.');
+      return;
+    }
+
+    setForgotError(null);
+    setForgotLoading(true);
+
+    try {
+      const facultyData = await authService.verifyMuallim(cleanEmail);
+      setVerifiedMuallim(facultyData);
+      setForgotStep('RESET');
+    } catch (err: any) {
+      setForgotError(err?.message || 'No active Muallim account found for this email address.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = resetIdentifier.trim().toLowerCase();
+
+    if (!newPassword || newPassword.length < 5) {
+      setForgotError('New password must be at least 5 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setForgotError('Passwords do not match. Please ensure both fields match.');
+      return;
+    }
+    setForgotError(null);
+    setForgotLoading(true);
+
+    try {
+      await authService.resetMuallimPassword(cleanEmail, newPassword.trim(), confirmPassword.trim());
+      setForgotStep('SUCCESS');
+    } catch (err: any) {
+      setForgotError(err?.message || 'Failed to update password. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleFinishReset = () => {
+    setIsForgotModalOpen(false);
+    setIdentifier(resetIdentifier);
+    setPassword(newPassword);
+    setSuccessMsg('Password updated successfully! You can now sign in with your new password.');
+  };
+
   return (
     <div className="min-h-screen bg-[#FAF8F2] flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 bg-islamic-pattern">
       {/* Top Brand Header */}
@@ -110,10 +241,11 @@ export const LoginPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedPortal('PARENT')}
-                className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${selectedPortal === 'PARENT'
+                className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                  selectedPortal === 'PARENT'
                     ? 'bg-[#0F6B50] text-white shadow-sm'
                     : 'text-[#667085] hover:text-[#1F2933]'
-                  }`}
+                }`}
               >
                 <Users className="w-4 h-4" />
                 <span>Parent Portal</span>
@@ -122,10 +254,11 @@ export const LoginPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedPortal('MUALLIM')}
-                className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${selectedPortal === 'MUALLIM'
+                className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                  selectedPortal === 'MUALLIM'
                     ? 'bg-[#0F6B50] text-white shadow-sm'
                     : 'text-[#667085] hover:text-[#1F2933]'
-                  }`}
+                }`}
               >
                 <GraduationCap className="w-4 h-4" />
                 <span>Muallim Portal</span>
@@ -198,8 +331,16 @@ export const LoginPage: React.FC = () => {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-medium border border-rose-200">
-                {error}
+              <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-medium border border-rose-200 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="p-3 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-medium border border-emerald-200 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                <span>{successMsg}</span>
               </div>
             )}
 
@@ -213,15 +354,31 @@ export const LoginPage: React.FC = () => {
               required
             />
 
-            <Input
-              label="Password / PIN"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              leftIcon={<Lock className="w-4 h-4" />}
-              required
-            />
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs sm:text-sm font-semibold text-[#1F2933]">
+                  Password / PIN
+                </label>
+                {/* FORGOT PASSWORD: ONLY VISIBLE IN MUALLIM PORTAL */}
+                {selectedPortal === 'MUALLIM' && (
+                  <button
+                    type="button"
+                    onClick={handleOpenForgotPassword}
+                    className="text-xs font-bold text-[#0F6B50] hover:text-[#084C3A] hover:underline focus:outline-none transition-colors"
+                  >
+                    Forgot Password?
+                  </button>
+                )}
+              </div>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                leftIcon={<Lock className="w-4 h-4" />}
+                required
+              />
+            </div>
 
             <div className="pt-2 text-center">
               <Button
@@ -264,6 +421,249 @@ export const LoginPage: React.FC = () => {
           </form>
         </Card>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MUALLIM FORGOT PASSWORD MODAL (MUALLIM PORTAL ONLY)                       */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={isForgotModalOpen}
+        onClose={() => setIsForgotModalOpen(false)}
+        title={
+          forgotStep === 'SUCCESS'
+            ? 'Password Reset Complete'
+            : forgotStep === 'RESET'
+            ? 'Set New Password'
+            : 'Muallim Password Recovery'
+        }
+        subtitle={
+          forgotStep === 'SUCCESS'
+            ? 'Your faculty credentials have been updated.'
+            : forgotStep === 'RESET'
+            ? 'Enter and confirm your new secure password.'
+            : 'Verify your Usthad account to recover your access.'
+        }
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          {forgotError && (
+            <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-medium border border-rose-200 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{forgotError}</span>
+            </div>
+          )}
+
+          {/* STEP 1: IDENTIFY MUALLIM & EMAIL DISPATCH */}
+          {forgotStep === 'IDENTIFY' && (
+            <form onSubmit={handleSendResetEmail} className="space-y-4">
+              <div className="p-3 rounded-xl bg-[#DDEDE5]/50 border border-[#bbdcd0]/60 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#0F6B50] text-white flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-[#084C3A]">Faculty Email Verification</p>
+                  <p className="text-[11px] text-[#0F6B50]">
+                    A secure password reset link will be sent to your registered Usthad email.
+                  </p>
+                </div>
+              </div>
+
+              <Input
+                label="Registered Usthad Email Address"
+                type="email"
+                placeholder="e.g. shibili@yopmail.com"
+                value={resetIdentifier}
+                onChange={(e) => setResetIdentifier(e.target.value)}
+                leftIcon={<Mail className="w-4 h-4" />}
+                required
+                autoFocus
+              />
+
+              <div className="p-2.5 rounded-xl bg-[#FAF8F2] border border-[#E3EAE6] text-[11px] text-[#667085]">
+                <p>
+                  <strong className="text-[#1F2933]">Parent Notice:</strong> Parents log in using their mobile number. For password assistance, parents should directly contact <span className="font-semibold text-[#0F6B50]">Sadhr Muallim</span>.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  onClick={() => setIsForgotModalOpen(false)}
+                  className="w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  isLoading={forgotLoading}
+                  className="w-full sm:w-auto"
+                  rightIcon={<Mail className="w-4 h-4" />}
+                >
+                  Send Reset Link
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {/* STEP 2: SET NEW PASSWORD */}
+          {forgotStep === 'RESET' && verifiedMuallim && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              {/* Verified Identity Card */}
+              <div className="p-3.5 rounded-2xl bg-white border border-[#E3EAE6] shadow-sm flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#0F6B50] text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                  {verifiedMuallim.name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-bold text-[#1F2933] truncate">
+                      {verifiedMuallim.name}
+                    </p>
+                    <span className="text-[10px] font-bold text-[#0F6B50] bg-[#DDEDE5] px-2 py-0.5 rounded-md shrink-0">
+                      {verifiedMuallim.role === 'SADHR_MUALLIM' ? 'Sadhr Muallim' : 'Muallim'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#667085] truncate">
+                    {verifiedMuallim.designation || 'Usthad & Class Mentor'}
+                  </p>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="block text-xs font-semibold text-[#1F2933] mb-1.5">
+                  New Password
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    placeholder="Enter at least 5 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    leftIcon={<Lock className="w-4 h-4" />}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#667085] hover:text-[#1F2933]"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-xs font-semibold text-[#1F2933] mb-1.5">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="Re-type new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    leftIcon={<KeyRound className="w-4 h-4" />}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#667085] hover:text-[#1F2933]"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {newPassword && confirmPassword && (
+                <div className="text-[11px] flex items-center gap-1.5">
+                  {newPassword === confirmPassword ? (
+                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Passwords match
+                    </span>
+                  ) : (
+                    <span className="text-rose-600 font-bold flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" /> Passwords do not match
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  onClick={() => setForgotStep('IDENTIFY')}
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  isLoading={forgotLoading}
+                  rightIcon={<CheckCircle2 className="w-4 h-4" />}
+                >
+                  Update Password
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {/* STEP 3: SUCCESS */}
+          {forgotStep === 'SUCCESS' && (
+            <div className="text-center py-4 space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-[#0F6B50] flex items-center justify-center mx-auto shadow-inner">
+                <Sparkles className="w-7 h-7" />
+              </div>
+
+              <div>
+                <h4 className="text-base font-extrabold text-[#1F2933]">
+                  {newPassword ? 'Password Updated Successfully!' : 'Password Reset Link Sent!'}
+                </h4>
+                <p className="text-xs text-[#667085] mt-1.5 max-w-sm mx-auto">
+                  {newPassword
+                    ? 'Your credentials have been securely updated. You can now sign in immediately.'
+                    : `We have sent an email containing a secure password reset link to ${resetIdentifier}. Please check your inbox (or spam folder) and click the link to set your new password.`}
+                </p>
+              </div>
+
+              <div className="pt-2">
+                {newPassword ? (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="lg"
+                    className="w-full"
+                    onClick={handleFinishReset}
+                    rightIcon={<ArrowRight className="w-4 h-4" />}
+                  >
+                    Proceed to Login
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="lg"
+                    className="w-full"
+                    onClick={() => setIsForgotModalOpen(false)}
+                    rightIcon={<CheckCircle2 className="w-4 h-4" />}
+                  >
+                    Done
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
+
+export default LoginPage;
