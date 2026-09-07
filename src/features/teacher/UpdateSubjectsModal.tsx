@@ -114,7 +114,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
       setIsEditingSubject(false);
       if (onUpdated) onUpdated();
     } catch (err: any) {
-      showToast(`❌ Failed to save subject: ${err.message || 'Error'}`, 'error');
+      showToast(`❌ Failed to save subject: ${err.message || 'Error'}`);
     } finally {
       setIsSaving(false);
     }
@@ -127,7 +127,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
       showToast(`✓ Subject removed from database.`);
       if (onUpdated) onUpdated();
     } catch (err: any) {
-      showToast(`❌ Failed to delete subject: ${err.message || 'Error'}`, 'error');
+      showToast(`❌ Failed to delete subject: ${err.message || 'Error'}`);
     }
   };
 
