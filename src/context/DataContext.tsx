@@ -95,6 +95,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ]);
 
       setStudents(studList);
+      if (studList.length > 0) {
+        setSelectedChildId(prev => {
+          const exists = studList.some(s => s.id === prev);
+          return exists ? prev : studList[0].id;
+        });
+      }
       setAttendance(attList);
       setAssessments(assList);
       setQuranRecords(qurList);
@@ -115,11 +121,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [loadData]);
 
   const getStudentById = useCallback((studentId: string) => {
-    return students.find(s => s.id === studentId);
+    return students.find(s => s.id === studentId) || students[0];
   }, [students]);
 
   const getStudentSummary = useCallback((studentId: string): StudentSummary | null => {
-    const student = students.find(s => s.id === studentId);
+    const student = students.find(s => s.id === studentId) || students[0];
     if (!student) return null;
 
     return computeStudentSummary(

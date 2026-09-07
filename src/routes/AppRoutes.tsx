@@ -10,6 +10,7 @@ import { AdminLayout } from '../components/layout/AdminLayout';
 // Public Pages
 import { LandingPage } from '../features/landing/LandingPage';
 import { LoginPage } from '../features/auth/LoginPage';
+import { ResetPasswordPage } from '../features/auth/ResetPasswordPage';
 
 // Parent Pages
 import { ParentDashboard } from '../features/parent/ParentDashboard';
@@ -46,6 +47,7 @@ export const AppRoutes: React.FC = () => {
       {/* Public Landing & Login */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Parent Portal */}
       <Route
@@ -72,7 +74,7 @@ export const AppRoutes: React.FC = () => {
       <Route
         path="/teacher"
         element={
-          <ProtectedRoute allowedRoles={['MUALLIM']}>
+          <ProtectedRoute allowedRoles={['MUALLIM', 'SADHR_MUALLIM']}>
             <TeacherLayout />
           </ProtectedRoute>
         }

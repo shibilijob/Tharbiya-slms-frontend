@@ -15,7 +15,8 @@ import {
   X,
   Sparkles,
   CalendarDays,
-  BookOpenCheck
+  BookOpenCheck,
+  ShieldCheck
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Toast } from '../feedback/Toast';
@@ -124,6 +125,7 @@ export const TeacherLayout: React.FC = () => {
   ];
 
   const moreMenuItems = [
+    ...(user?.role === 'SADHR_MUALLIM' ? [{ label: 'Return to Sadhr Admin', path: '/admin/dashboard', icon: <ShieldCheck className="w-5 h-5 text-[#C9A227]" /> }] : []),
     { label: 'Academic Assessments', path: '/teacher/assessments', icon: <GraduationCap className="w-5 h-5 text-[#0F6B50]" /> },
     { label: 'Practical Score & Awards', path: '/teacher/akhlaq-remarks', icon: <HeartHandshake className="w-5 h-5 text-[#C9A227]" /> }
   ];
@@ -151,8 +153,20 @@ export const TeacherLayout: React.FC = () => {
               </div>
             </div>
 
-            {/* Right: Assigned Class & Logout */}
+            {/* Right: Return to Sadhr Admin, Assigned Class & Logout */}
             <div className="flex items-center gap-2 sm:gap-3">
+              {user?.role === 'SADHR_MUALLIM' && (
+                <Link
+                  to="/admin/dashboard"
+                  className="px-3 py-1.5 rounded-xl bg-[#084C3A] hover:bg-[#0F6B50] text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition-all border border-[#0F6B50]"
+                  title="Return to Institutional Dashboard"
+                >
+                  <ShieldCheck className="w-4 h-4 text-[#C9A227]" />
+                  <span className="hidden sm:inline">Sadhr Office / Admin</span>
+                  <span className="sm:hidden">Admin</span>
+                </Link>
+              )}
+
               <div className="px-2.5 py-1 bg-[#DDEDE5] rounded-xl text-[11px] sm:text-xs font-bold text-[#084C3A]">
                 {teacherClasses.length > 0 ? teacherClasses.map(c => `Class ${c}`).join(' & ') : 'Faculty'}
               </div>
@@ -181,6 +195,25 @@ export const TeacherLayout: React.FC = () => {
           {/* Desktop Navigation Sidebar (>= 1024px) */}
           <aside className="hidden lg:block lg:col-span-3">
             <div className="sticky top-24 bg-white rounded-2xl p-3 border border-[#E3EAE6] shadow-sm space-y-1.5">
+              {user?.role === 'SADHR_MUALLIM' && (
+                <div className="p-3 bg-[#084C3A] text-white rounded-xl mb-2 flex items-center justify-between shadow-sm">
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-[#C9A227] flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-[#C9A227]" />
+                      Sadhr Mudarris
+                    </p>
+                    <p className="text-xs font-extrabold text-white mt-0.5">Sadhr Muallim Office</p>
+                  </div>
+                  <Link
+                    to="/admin/dashboard"
+                    className="px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[11px] font-bold text-white transition-colors flex items-center gap-1"
+                  >
+                    <span>Admin</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              )}
+
               <div className="p-3 bg-[#FAF8F2] rounded-xl mb-2">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[#667085]">Faculty Mentorship</p>
                 <p className="text-sm font-extrabold text-[#084C3A] mt-0.5">

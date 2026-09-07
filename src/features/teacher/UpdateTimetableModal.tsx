@@ -79,7 +79,10 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
   // Load subjects and timetable for selected class and day
   useEffect(() => {
     if (isOpen) {
-      setSubjectsList(subjectService.getAll());
+      subjectService.fetchFromApi().then((list) => {
+        if (list && list.length > 0) setSubjectsList(list);
+        else setSubjectsList(subjectService.getAll());
+      });
       const daySchedule = timetableService.getDaySchedule(selectedClass, selectedDay);
       setPeriods(daySchedule);
     }

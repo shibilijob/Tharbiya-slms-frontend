@@ -55,8 +55,18 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Link to="/teacher/dashboard">
+              <Button
+                variant="gold"
+                size="md"
+                className="bg-[#C9A227] hover:bg-[#b59120] text-[#084C3A] font-extrabold shadow-md hover:shadow-lg transition-all"
+                leftIcon={<GraduationCap className="w-4 h-4" />}
+              >
+                Switch to My Muallim Dashboard
+              </Button>
+            </Link>
             <Link to="/admin/reports">
-              <Button variant="gold" size="md" leftIcon={<FileSpreadsheet className="w-4 h-4" />}>
+              <Button variant="outline" size="md" className="border-white/30 text-white hover:bg-white/10" leftIcon={<FileSpreadsheet className="w-4 h-4" />}>
                 Reports Center
               </Button>
             </Link>
@@ -135,6 +145,30 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Right: Quick Management Shortcuts */}
         <div className="lg:col-span-5 space-y-4">
+          {/* Dedicated Muallim Classroom Switcher Card */}
+          <Card className="p-5 sm:p-6 bg-gradient-to-br from-[#FAF8F2] to-[#DDEDE5]/40 border-2 border-[#0F6B50]/20 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#0F6B50] bg-[#DDEDE5] px-2.5 py-0.5 rounded-full inline-block mb-1">
+                  Faculty Workspace
+                </span>
+                <h3 className="text-sm font-bold text-[#1F2933]">My Muallim Classroom</h3>
+                <p className="text-xs text-[#667085] mt-1">
+                  Switch to your teaching dashboard to mark attendance, record Quran & Hifz, evaluate assessments, and update practical scores.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <Link to="/teacher/dashboard" className="w-full inline-block">
+                <Button variant="primary" size="sm" className="w-full justify-center gap-2 bg-[#0F6B50] hover:bg-[#084C3A] text-xs font-bold shadow-sm">
+                  <GraduationCap className="w-4 h-4" />
+                  Open My Muallim Dashboard
+                  <ArrowRight className="w-4 h-4 ml-auto" />
+                </Button>
+              </Link>
+            </div>
+          </Card>
+
           <Card className="p-5 sm:p-6">
             <h3 className="text-sm font-bold text-[#1F2933] mb-3">Institutional Controls</h3>
             <div className="grid grid-cols-2 gap-2">

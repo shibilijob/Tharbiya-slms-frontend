@@ -14,10 +14,9 @@ import {
   Trash2,
   CheckCircle2,
   BookOpen,
-  RotateCcw,
   Sparkles,
   Layers,
-  Award
+  Loader2
 } from 'lucide-react';
 
 interface UpdateSubjectsModalProps {
@@ -33,6 +32,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
 }) => {
   const { showToast } = useNotifications();
   const [subjects, setSubjects] = useState<SubjectMeta[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isEditingSubject, setIsEditingSubject] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -45,9 +45,21 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
   const [color, setColor] = useState('#0F6B50');
   const [isSaving, setIsSaving] = useState(false);
 
+  const loadSubjects = async () => {
+    setIsLoading(true);
+    try {
+      const data = await subjectService.fetchFromApi();
+      setSubjects(data);
+    } catch (e) {
+      console.error("Failed to load subjects", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
-      setSubjects(subjectService.getAll());
+      loadSubjects();
     }
   }, [isOpen]);
 
@@ -73,10 +85,11 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
     setIsEditingSubject(true);
   };
 
-  const handleSaveSubject = (e: React.FormEvent) => {
+  const handleSaveSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
+    setIsSaving(true);
     const subjectObj: SubjectMeta = {
       id: (editingId || id || name) as SubjectName,
       name: name.trim(),
@@ -87,42 +100,47 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
       description: description.trim() || 'Curriculum subject for Darunnajath Mundambra'
     };
 
-    let updated: SubjectMeta[];
-    if (editingId) {
-      updated = subjectService.updateSubject(editingId, subjectObj);
-      showToast(`✓ Subject "${name}" updated successfully!`);
-    } else {
-      updated = subjectService.addSubject(subjectObj);
-      showToast(`✓ New subject "${name}" added to curriculum!`);
-    }
+    try {
+      let updated: SubjectMeta[];
+      if (editingId) {
+        updated = await subjectService.updateSubject(editingId, subjectObj);
+        showToast(`✓ Subject "${name}" updated in database!`);
+      } else {
+        updated = await subjectService.addSubject(subjectObj);
+        showToast(`✓ New subject "${name}" added to database!`);
+      }
 
-    setSubjects(updated);
-    setIsEditingSubject(false);
-    if (onUpdated) onUpdated();
-  };
-
-  const handleDeleteSubject = (subId: string) => {
-    const updated = subjectService.deleteSubject(subId);
-    setSubjects(updated);
-    showToast(`Subject removed from curriculum.`);
-    if (onUpdated) onUpdated();
-  };
-
-  const handleResetToDefault = () => {
-    const defaultList = subjectService.resetToDefault();
-    setSubjects(defaultList);
-    showToast(`✓ Curriculum reset to Madrasa standard subjects.`);
-    if (onUpdated) onUpdated();
-  };
-
-  const handleSaveAll = () => {
-    setIsSaving(true);
-    setTimeout(() => {
+      setSubjects(updated);
+      setIsEditingSubject(false);
+      if (onUpdated) onUpdated();
+    } catch (err: any) {
+      showToast(`❌ Failed to save subject: ${err.message || 'Error'}`, 'error');
+    } finally {
       setIsSaving(false);
-      showToast(`✓ All subject configurations updated successfully!`);
+    }
+  };
+
+  const handleDeleteSubject = async (subId: string) => {
+    try {
+      const updated = await subjectService.deleteSubject(subId);
+      setSubjects(updated);
+      showToast(`✓ Subject removed from database.`);
+      if (onUpdated) onUpdated();
+    } catch (err: any) {
+      showToast(`❌ Failed to delete subject: ${err.message || 'Error'}`, 'error');
+    }
+  };
+
+  const handleSaveAll = async () => {
+    setIsSaving(true);
+    try {
+      await loadSubjects();
+      showToast(`✓ All subject configurations updated in database!`);
       if (onUpdated) onUpdated();
       onClose();
-    }, 400);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -130,7 +148,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Update Madrasa Subjects & Curriculum"
-      subtitle="Configure Core Subjects, Malayalam Titles & Syllabus Targets"
+      subtitle="Configure Core Subjects, Malayalam Titles & Syllabus Targets in Database"
       maxWidth="3xl"
     >
       <div className="space-y-5">
@@ -142,25 +160,15 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
             </span>
             <div>
               <h4 className="text-sm font-extrabold text-[#1F2933]">
-                {subjects.length} Active Curriculum Subjects
+                {subjects.length} Database Curriculum Subjects
               </h4>
               <p className="text-xs text-[#667085] mt-0.5">
-                Darunnajath Mundambra Islamic Education Board
+                Darunnajath Mundambra Islamic Education Board (Stored in MongoDB)
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleResetToDefault}
-              className="text-xs"
-              title="Reset to default subjects"
-            >
-              <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reset Default
-            </Button>
             <Button
               type="button"
               variant="primary"
@@ -174,8 +182,14 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
           </div>
         </div>
 
-        {/* Subject Editor Form */}
-        {isEditingSubject ? (
+        {/* Loading Spinner */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12 text-[#667085]">
+            <Loader2 className="w-8 h-8 animate-spin text-[#0F6B50] mb-2" />
+            <p className="text-sm font-medium">Loading subjects from database...</p>
+          </div>
+        ) : isEditingSubject ? (
+          /* Subject Editor Form */
           <form onSubmit={handleSaveSubject} className="p-4 sm:p-5 rounded-2xl bg-white border-2 border-[#0F6B50]/30 shadow-xs space-y-4 animate-in fade-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#E3EAE6]">
               <div className="flex items-center gap-2">
@@ -252,6 +266,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setIsEditingSubject(false)}
+                disabled={isSaving}
               >
                 Cancel
               </Button>
@@ -259,12 +274,19 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
                 type="submit"
                 variant="primary"
                 size="sm"
+                isLoading={isSaving}
                 leftIcon={<CheckCircle2 className="w-4 h-4" />}
               >
                 {editingId ? 'Save Subject' : 'Create Subject'}
               </Button>
             </div>
           </form>
+        ) : subjects.length === 0 ? (
+          <div className="text-center py-10 bg-[#FAF8F2] rounded-2xl border border-dashed border-[#E3EAE6]">
+            <BookOpen className="w-10 h-10 mx-auto text-[#667085] mb-2 opacity-50" />
+            <p className="text-sm font-bold text-[#1F2933]">No subjects in database</p>
+            <p className="text-xs text-[#667085] mt-1">Click "Add Subject" above to add your first subject.</p>
+          </div>
         ) : (
           /* List of Subjects */
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -322,7 +344,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
         <div className="flex items-center justify-between pt-3 border-t border-[#E3EAE6]">
           <div className="flex items-center gap-1.5 text-xs text-[#667085]">
             <Sparkles className="w-4 h-4 text-[#C9A227]" />
-            <span>Changes reflect immediately in assessments and grading</span>
+            <span>Changes are persisted in MongoDB database</span>
           </div>
 
           <div className="flex gap-2">
@@ -342,7 +364,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
               isLoading={isSaving}
               leftIcon={<CheckCircle2 className="w-4 h-4" />}
             >
-              Save Curriculum
+              Done
             </Button>
           </div>
         </div>

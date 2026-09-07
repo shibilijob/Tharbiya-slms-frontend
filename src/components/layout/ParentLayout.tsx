@@ -30,13 +30,28 @@ export const ParentLayout: React.FC = () => {
   const navigate = useNavigate();
   const [isChildDropdownOpen, setIsChildDropdownOpen] = useState(false);
 
-  // Filter children belonging to this parent
   const parentId = user?.id || '';
   const userStudentIds = (user as any)?.studentIds || [];
   const parentChildren = userStudentIds.length > 0
     ? students.filter(s => userStudentIds.includes(s.id) || s.parentId === parentId)
     : students.filter(s => s.parentId === parentId);
   const activeChild = students.find(s => s.id === selectedChildId) || parentChildren[0] || students[0];
+
+  const currentChild = activeChild || {
+    id: selectedChildId || '',
+    admissionNo: 'DN-2026',
+    name: user?.name ? `${user.name}'s Child` : 'Student',
+    malayalamName: '',
+    gender: 'MALE' as const,
+    dob: '2015-05-14',
+    parentName: user?.name || 'Parent',
+    parentContact: (user as any)?.phone || '',
+    class: '5',
+    division: 'A',
+    status: 'ACTIVE' as const,
+    enrollmentDate: '',
+    avatar: '',
+  };
 
   const bottomNavItems = [
     { label: 'Home', path: '/parent/dashboard', icon: <Home className="w-5 h-5" /> },
@@ -100,12 +115,12 @@ export const ParentLayout: React.FC = () => {
                   onClick={() => setIsChildDropdownOpen(!isChildDropdownOpen)}
                   className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] rounded-xl transition-colors text-left"
                 >
-                  <Avatar name={activeChild.name} src={activeChild.avatar} size="sm" />
+                  <Avatar name={currentChild.name} src={currentChild.avatar} size="sm" />
                   <div className="hidden xs:block">
                     <p className="text-xs font-bold text-[#084C3A] leading-tight flex items-center gap-1">
-                      {activeChild.name}
+                      {currentChild.name}
                       <span className="text-[10px] font-semibold text-[#0F6B50] bg-[#DDEDE5] px-1.5 py-0.2 rounded-md">
-                        Class {activeChild.class}
+                        Class {currentChild.class}
                       </span>
                     </p>
                   </div>
@@ -126,7 +141,7 @@ export const ParentLayout: React.FC = () => {
                         }}
                         className={clsx(
                           "w-full px-3 py-2.5 text-left flex items-center gap-2.5 hover:bg-[#FAF8F2] transition-colors",
-                          child.id === activeChild.id && "bg-[#DDEDE5]/40 text-[#084C3A] font-bold"
+                          child.id === currentChild.id && "bg-[#DDEDE5]/40 text-[#084C3A] font-bold"
                         )}
                       >
                         <Avatar name={child.name} src={child.avatar} size="sm" />
@@ -134,7 +149,7 @@ export const ParentLayout: React.FC = () => {
                           <p className="text-xs font-bold text-[#1F2933] truncate">{child.name}</p>
                           <p className="text-[10px] text-[#667085]">Class {child.class}</p>
                         </div>
-                        {child.id === activeChild.id && (
+                        {child.id === currentChild.id && (
                           <span className="w-2 h-2 rounded-full bg-[#0F6B50]" />
                         )}
                       </button>
@@ -183,11 +198,11 @@ export const ParentLayout: React.FC = () => {
             <div className="sticky top-24 space-y-4">
               {/* Active Child Dossier Mini-card */}
               <div className="bg-white rounded-2xl p-4 border border-[#E3EAE6] shadow-sm flex items-center gap-3">
-                <Avatar name={activeChild.name} src={activeChild.avatar} size="lg" ring />
+                <Avatar name={currentChild.name} src={currentChild.avatar} size="lg" ring />
                 <div>
-                  <h4 className="font-bold text-[#1F2933] text-sm leading-tight">{activeChild.name}</h4>
-                  <p className="font-malayalam text-xs text-[#0F6B50] font-semibold">{activeChild.malayalamName}</p>
-                  <p className="text-xs text-[#667085] mt-0.5">Class {activeChild.class} • Adm: {activeChild.admissionNo}</p>
+                  <h4 className="font-bold text-[#1F2933] text-sm leading-tight">{currentChild.name}</h4>
+                  <p className="font-malayalam text-xs text-[#0F6B50] font-semibold">{currentChild.malayalamName}</p>
+                  <p className="text-xs text-[#667085] mt-0.5">Class {currentChild.class} • Adm: {currentChild.admissionNo}</p>
                 </div>
               </div>
 

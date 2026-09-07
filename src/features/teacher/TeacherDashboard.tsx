@@ -131,8 +131,12 @@ export const TeacherDashboard: React.FC = () => {
   const loadTimetableAndSubjects = () => {
     const schedule = timetableService.getDaySchedule(dashboardClass, selectedDashboardDay);
     setTodaySchedule(schedule);
-    const subjects = subjectService.getAll();
-    setActiveSubjectsCount(subjects.length);
+    subjectService.fetchFromApi().then((list) => {
+      setActiveSubjectsCount(list.length);
+    }).catch(() => {
+      const subjects = subjectService.getAll();
+      setActiveSubjectsCount(subjects.length);
+    });
   };
 
   useEffect(() => {

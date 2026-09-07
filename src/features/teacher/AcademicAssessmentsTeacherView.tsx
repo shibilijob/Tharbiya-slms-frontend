@@ -107,7 +107,10 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   const [subjectsList, setSubjectsList] = useState<SubjectMeta[]>([]);
 
   useEffect(() => {
-    setSubjectsList(subjectService.getAll());
+    subjectService.fetchFromApi().then((list) => {
+      if (list && list.length > 0) setSubjectsList(list);
+      else setSubjectsList(subjectService.getAll());
+    });
   }, []);
 
   // Filter toolbar state
