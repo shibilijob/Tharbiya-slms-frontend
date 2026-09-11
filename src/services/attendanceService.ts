@@ -1,67 +1,123 @@
 import { AttendanceRecord, AttendanceStatus } from '../types';
 import { api } from '../lib/axios';
+import { useStudentStore } from '../stores/studentStore';
 
-const STORAGE_KEY = 'tharbiyah_attendance';
+/**
+ * Maps raw backend Attendance document to frontend AttendanceRecord.
+ * Enforces mapping:
+ * - PRESENT / legacy LATE -> PRESENT
+ * - EXCUSED / LEAVE -> LEAVE
+ * - UNEXCUSED / ABSENT -> ABSENT
+ * - HOLIDAY -> HOLIDAY
+ */
+function mapApiRecordToAttendanceRecord(r: any): AttendanceRecord {
+  const dateStr =
+    typeof r.date === 'string'
+      ? r.date.split('T')[0]
+      : new Date(r.date).toISOString().split('T')[0];
+
+  let status: AttendanceStatus = 'PRESENT';
+  if (r.status === 'EXCUSED' || r.status === 'LEAVE') {
+    status = 'LEAVE';
+  } else if (r.status === 'UNEXCUSED' || r.status === 'ABSENT') {
+    status = 'ABSENT';
+  } else if (r.status === 'HOLIDAY') {
+    status = 'HOLIDAY';
+  } else {
+    status = 'PRESENT';
+  }
+
+  return {
+    id: r._id?.toString() || r.id,
+    studentId: r.studentId?._id?.toString() || r.studentId?.toString() || r.studentId,
+    date: dateStr,
+    status,
+    remarks: r.remark || r.remarks || '',
+    markedByTeacherId: r.markedById?._id?.toString() || r.markedById?.toString() || r.markedById || '',
+  };
+}
 
 export const attendanceService = {
+  /**
+   * Fetch all attendance records for the authenticated user/context directly from MongoDB.
+   */
   async getAll(): Promise<AttendanceRecord[]> {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (data) {
-      try {
-        return JSON.parse(data);
-      } catch (e) {
-        console.error("Failed to parse stored attendance", e);
+    try {
+      const res = await api.get('/attendance');
+      const rawRecords =
+        res.data?.records ||
+        res.data?.data ||
+        (Array.isArray(res.data) ? res.data : []);
+
+      if (Array.isArray(rawRecords)) {
+        return rawRecords.map(mapApiRecordToAttendanceRecord);
       }
+      return [];
+    } catch (err) {
+      console.error('Failed to fetch attendance records from server:', err);
+      throw err;
     }
-    return [];
   },
 
+  /**
+   * Fetch attendance history for a single student from MongoDB.
+   */
   async getByStudent(studentId: string): Promise<AttendanceRecord[]> {
     try {
-      const res = await api.get<{ records: any[] }>(`/attendance/student/${studentId}`);
-      if (res.data?.records && Array.isArray(res.data.records)) {
-        return res.data.records.map((r: any) => ({
-          id: r._id || r.id,
-          studentId: r.studentId?._id || r.studentId,
-          date: typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0],
-          status: r.status as AttendanceStatus,
-          remarks: r.remark || r.remarks,
-          markedByTeacherId: r.markedById?._id || r.markedById || ''
-        }));
-      }
-    } catch {
-      // Offline / API unavailable fallback
-    }
+      const res = await api.get(`/attendance/student/${studentId}`);
+      const rawList =
+        res.data?.records ||
+        res.data?.data?.records ||
+        res.data?.data ||
+        (Array.isArray(res.data) ? res.data : []);
 
-    const records = await this.getAll();
-    return records
-      .filter(r => r.studentId === studentId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      if (Array.isArray(rawList)) {
+        return rawList.map(mapApiRecordToAttendanceRecord);
+      }
+      return [];
+    } catch (err) {
+      console.error(`Failed to fetch attendance for student ${studentId}:`, err);
+      throw err;
+    }
   },
 
-  async getByDateAndClass(date: string, studentIds: string[], classId?: string): Promise<AttendanceRecord[]> {
-    if (classId) {
-      try {
-        const res = await api.get<{ records: any[] }>(`/attendance/class/${classId}?date=${date}`);
-        if (res.data?.records && Array.isArray(res.data.records)) {
-          return res.data.records.map((r: any) => ({
-            id: r._id || r.id,
-            studentId: r.studentId?._id || r.studentId,
-            date: typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0],
-            status: r.status as AttendanceStatus,
-            remarks: r.remark || r.remarks,
-            markedByTeacherId: r.markedById?._id || r.markedById || ''
-          }));
+  /**
+   * Fetch attendance for a specific class and date from MongoDB.
+   */
+  async getByDateAndClass(
+    date: string,
+    studentIds?: string[],
+    classId?: string
+  ): Promise<AttendanceRecord[]> {
+    try {
+      const url = classId
+        ? `/attendance/class/${classId}?date=${date}`
+        : `/attendance?date=${date}`;
+
+      const res = await api.get(url);
+      const rawList =
+        res.data?.records ||
+        res.data?.data ||
+        (Array.isArray(res.data) ? res.data : []);
+
+      if (Array.isArray(rawList)) {
+        const mapped = rawList.map(mapApiRecordToAttendanceRecord);
+        if (studentIds && studentIds.length > 0) {
+          return mapped.filter((r) => studentIds.includes(r.studentId));
         }
-      } catch {
-        // Fallback
+        return mapped;
       }
+      return [];
+    } catch (err) {
+      console.error('Failed to fetch attendance by date and class:', err);
+      throw err;
     }
-
-    const records = await this.getAll();
-    return records.filter(r => r.date === date && studentIds.includes(r.studentId));
   },
 
+  /**
+   * Mark attendance for a single student.
+   * Dispatches to batchMarkAttendance to ensure uniform backend persistence.
+   */
   async markAttendance(
     studentId: string,
     date: string,
@@ -70,98 +126,68 @@ export const attendanceService = {
     remarks?: string,
     classId?: string
   ): Promise<AttendanceRecord> {
-    try {
-      if (classId) {
-        await api.post('/attendance', {
-          classId,
-          date,
-          records: [{ studentId, status, remark: remarks }]
-        });
-      }
-    } catch {
-      // Fallback
+    const records = await this.batchMarkAttendance(
+      [{ studentId, date, status, remarks }],
+      teacherId,
+      classId
+    );
+    if (!records || records.length === 0) {
+      throw new Error('No attendance record returned from server');
     }
-
-    const records = await this.getAll();
-    const existingIndex = records.findIndex(r => r.studentId === studentId && r.date === date);
-
-    if (existingIndex > -1) {
-      records[existingIndex] = {
-        ...records[existingIndex],
-        status,
-        remarks,
-        markedByTeacherId: teacherId
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-      return records[existingIndex];
-    } else {
-      const newRecord: AttendanceRecord = {
-        id: `att-${studentId}-${date}-${Date.now()}`,
-        studentId,
-        date,
-        status,
-        remarks,
-        markedByTeacherId: teacherId
-      };
-      const updated = [newRecord, ...records];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return newRecord;
-    }
+    return records[0];
   },
 
+  /**
+   * Batch mark attendance for multiple students.
+   * Ensures MongoDB is the single source of truth without localStorage caching.
+   */
   async batchMarkAttendance(
     updates: Array<{ studentId: string; date: string; status: AttendanceStatus; remarks?: string }>,
-    teacherId: string,
+    _teacherId: string,
     classId?: string
   ): Promise<AttendanceRecord[]> {
-    if (classId && updates.length > 0) {
-      try {
-        const date = updates[0].date;
-        await api.post('/attendance', {
-          classId,
-          date,
-          records: updates.map(u => ({
-            studentId: u.studentId,
-            status: u.status,
-            remark: u.remarks
-          }))
-        });
-      } catch {
-        // Fallback
-      }
+    if (!updates || updates.length === 0) {
+      return [];
     }
 
-    const records = await this.getAll();
-    const resultMap: Map<string, AttendanceRecord> = new Map();
-    
-    records.forEach(r => resultMap.set(`${r.studentId}_${r.date}`, r));
+    // Resolve classId if not explicitly provided
+    let targetClassId = classId;
+    if (!targetClassId) {
+      const students = useStudentStore.getState().students;
+      const firstStudent = students.find((s) => s.id === updates[0].studentId);
+      targetClassId = firstStudent?.class;
+    }
 
-    const updatedOrNew: AttendanceRecord[] = [];
+    if (!targetClassId) {
+      throw new Error('Class ID is required to mark attendance');
+    }
 
-    updates.forEach(u => {
-      const key = `${u.studentId}_${u.date}`;
-      if (resultMap.has(key)) {
-        const existing = resultMap.get(key)!;
-        const modified = { ...existing, status: u.status, remarks: u.remarks, markedByTeacherId: teacherId };
-        resultMap.set(key, modified);
-        updatedOrNew.push(modified);
-      } else {
-        const fresh: AttendanceRecord = {
-          id: `att-${u.studentId}-${u.date}-${Date.now()}`,
-          studentId: u.studentId,
-          date: u.date,
-          status: u.status,
-          remarks: u.remarks,
-          markedByTeacherId: teacherId
-        };
-        resultMap.set(key, fresh);
-        updatedOrNew.push(fresh);
-      }
+    const date = updates[0].date;
+    const response = await api.post('/attendance/mark', {
+      classId: targetClassId,
+      date,
+      records: updates.map((u) => ({
+        studentId: u.studentId,
+        status: u.status,
+        remark: u.remarks,
+      })),
     });
 
-    const newFullList = Array.from(resultMap.values());
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newFullList));
-    return updatedOrNew;
-  }
-};
+    const rawRecords =
+      response.data?.records ||
+      response.data?.data?.records ||
+      response.data?.data;
 
+    if (Array.isArray(rawRecords) && rawRecords.length > 0) {
+      return rawRecords.map(mapApiRecordToAttendanceRecord);
+    }
+
+    // If backend confirmed success without returning full records, query confirmed records from MongoDB
+    const verified = await this.getByDateAndClass(
+      date,
+      updates.map((u) => u.studentId),
+      targetClassId
+    );
+    return verified;
+  },
+};

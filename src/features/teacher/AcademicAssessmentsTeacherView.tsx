@@ -9,7 +9,7 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
 import { Avatar } from '../../components/common/Avatar';
-import { subjectService } from '../../services/subjectService';
+import { useClassStore, useSubjectStore } from '../../stores';
 import { SubjectMeta, EXAM_TERMS } from '../../data/madrasaCurriculum';
 import { SubjectName, ExamTerm, AcademicAssessment } from '../../types';
 import {
@@ -27,48 +27,36 @@ import {
   Layers
 } from 'lucide-react';
 import { formatDate, getGradeBadgeClass } from '../../utils/formatters';
-import { api } from '../../lib/axios';
+
+const normalizeClassValue = (value?: string) =>
+  String(value || '').replace(/^Class\s*/i, '').trim();
+
+const subjectBelongsToClass = (subject: SubjectMeta, classValue: string) => {
+  const selectedClass = normalizeClassValue(classValue);
+  const subjectClassName = normalizeClassValue(subject.className);
+  const subjectClassId = normalizeClassValue(String(subject.classId || ''));
+
+  return subjectClassName === selectedClass || subjectClassId === selectedClass;
+};
 
 export const AcademicAssessmentsTeacherView: React.FC = () => {
   const { user } = useAuth();
   const { students, assessments, saveAssessment } = useData();
   const { showToast, pushNotification } = useNotifications();
 
-  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
+  const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
+  const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
 
   React.useEffect(() => {
-    api.get<any>('/faculty-members')
-      .then(res => {
-        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        if (Array.isArray(teachers) && teachers.length > 0) {
-          const matched = teachers.find((t: any) =>
-            (user?.id && (t.id === user.id || t._id === user.id)) ||
-            (user?.email && t.email === user.email) ||
-            (user?.phone && t.phone === user.phone) ||
-            (user?.name && t.name && (
-              t.name.toLowerCase() === user.name.toLowerCase() ||
-              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
-              user.name.toLowerCase().includes(t.name.toLowerCase())
-            ))
-          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
-
-          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
-            const classes = matched.assignedClasses
-              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-              .filter(Boolean);
-            if (classes.length > 0) {
-              setDynamicClasses(classes);
-            }
-          }
-        }
-      })
-      .catch(() => {});
-  }, [user]);
+    if (user) {
+      fetchAssignedClassesForTeacher(user);
+    }
+  }, [user, fetchAssignedClassesForTeacher]);
 
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
   const teacherClasses = React.useMemo(() => {
-    if (dynamicClasses.length > 0) return dynamicClasses;
+    if (teacherAssignedClasses.length > 0) return teacherAssignedClasses;
 
     let rawList: any[] = [];
     if (Array.isArray(teacherUser?.assignedClasses)) {
@@ -95,7 +83,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
       .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
     const unique = Array.from(new Set(fromStudents)).filter(Boolean);
     return unique.length > 0 ? unique : ['4'];
-  }, [dynamicClasses, teacherUser, students, user]);
+  }, [teacherAssignedClasses, teacherUser, students, user]);
 
   // Filter students assigned to teacher's assigned classes
   const teacherStudents = students.filter(s => {
@@ -103,22 +91,43 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
   });
 
-  // Subjects list from service
+  // Subjects list from service for the active class filter
   const [subjectsList, setSubjectsList] = useState<SubjectMeta[]>([]);
-
-  useEffect(() => {
-    subjectService.fetchFromApi().then((list) => {
-      if (list && list.length > 0) setSubjectsList(list);
-      else setSubjectsList(subjectService.getAll());
-    });
-  }, []);
+  const [modalSubjects, setModalSubjects] = useState<SubjectMeta[]>([]);
 
   // Filter toolbar state
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('All');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('');
   const [selectedSubject, setSelectedSubject] = useState<string>('All');
   const [selectedTerm, setSelectedTerm] = useState<ExamTerm>('Half Yearly');
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Load subjects for filter view based on selected class
+  useEffect(() => {
+    const targetClass = selectedClassFilter || teacherClasses[0] || '';
+    if (!targetClass) {
+      setSubjectsList([]);
+      return;
+    }
+
+    useSubjectStore.getState().fetchSubjects(targetClass).then((list) => {
+      const classSubjects = (list || []).filter((subject) =>
+        subjectBelongsToClass(subject, targetClass)
+      );
+      setSubjectsList(classSubjects);
+      setSelectedSubject((current) =>
+        current === 'All' || classSubjects.some((subject) => subject.id === current)
+          ? current
+          : 'All'
+      );
+    });
+  }, [selectedClassFilter, teacherClasses]);
+
+  useEffect(() => {
+    if (teacherClasses.length > 0 && !selectedClassFilter) {
+      setSelectedClassFilter(teacherClasses[0]);
+    }
+  }, [teacherClasses, selectedClassFilter]);
 
   // Modal form state
   const [formClass, setFormClass] = useState<string>(teacherClasses[0] || '5');
@@ -154,7 +163,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
 
   // Filter students for marksheet view
   const filteredStudents = teacherStudents.filter(s => {
-    const matchesClass = selectedClassFilter === 'All' || s.class === selectedClassFilter;
+    const matchesClass = !selectedClassFilter || normalizeClassValue(s.class) === normalizeClassValue(selectedClassFilter);
     const matchesSearch =
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase());
@@ -162,12 +171,16 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   });
 
   // Filter students for modal dropdown based on formClass
-  const modalClassStudents = teacherStudents.filter(s => s.class === formClass);
+  const modalClassStudents = teacherStudents.filter(
+    s => normalizeClassValue(s.class) === normalizeClassValue(formClass)
+  );
 
   const handleOpenAddModal = (studentId?: string, subject?: string, term?: ExamTerm) => {
     const student = studentId ? teacherStudents.find(s => s.id === studentId) : teacherStudents[0];
-    const initialClass = student?.class || (selectedClassFilter !== 'All' ? selectedClassFilter : (teacherClasses[0] || '5'));
-    const initialStudentId = studentId || teacherStudents.find(s => s.class === initialClass)?.id || teacherStudents[0]?.id || '';
+    const initialClass = student?.class || selectedClassFilter || (teacherClasses[0] || '5');
+    const initialStudentId = studentId || teacherStudents.find(
+      s => normalizeClassValue(s.class) === normalizeClassValue(initialClass)
+    )?.id || teacherStudents[0]?.id || '';
     const initialSub = (subject && subject !== 'All') ? subject : (selectedSubject !== 'All' ? selectedSubject : (subjectsList[0]?.id || 'Quran'));
     const initialTerm = term || selectedTerm;
 
@@ -175,6 +188,15 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     setTargetStudentId(initialStudentId);
     setFormSubject(initialSub);
     setFormExamTerm(initialTerm);
+    useSubjectStore.getState().fetchSubjects(initialClass).then((list) => {
+      const classSubjects = (list || []).filter((subject) =>
+        subjectBelongsToClass(subject, initialClass)
+      );
+      setModalSubjects(classSubjects);
+      if (classSubjects.length > 0 && !classSubjects.some(s => s.id === initialSub || s.name === initialSub)) {
+        setFormSubject(classSubjects[0].id);
+      }
+    });
 
     // Check if existing record exists
     const existing = assessments.find(
@@ -196,10 +218,23 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  // When class changes inside modal, sync student selection
+  // When class changes inside modal, sync student selection and load class subjects
   const handleModalClassChange = (newClass: string) => {
     setFormClass(newClass);
-    const firstInClass = teacherStudents.find(s => s.class === newClass);
+    useSubjectStore.getState().fetchSubjects(newClass).then((list) => {
+      const classSubjects = (list || []).filter((subject) =>
+        subjectBelongsToClass(subject, newClass)
+      );
+      setModalSubjects(classSubjects);
+      if (classSubjects.length > 0) {
+        if (!classSubjects.some(s => s.id === formSubject || s.name === formSubject)) {
+          setFormSubject(classSubjects[0].id);
+        }
+      }
+    });
+    const firstInClass = teacherStudents.find(
+      s => normalizeClassValue(s.class) === normalizeClassValue(newClass)
+    );
     if (firstInClass) {
       setTargetStudentId(firstInClass.id);
       syncExistingRecord(firstInClass.id, formSubject, formExamTerm);
@@ -221,7 +256,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
 
   const handleSaveAssessmentForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetStudentId) return;
+    if (!targetStudentId || !user?.id) return;
 
     setIsSaving(true);
     try {
@@ -237,7 +272,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
         obtainedMarks: marksNum,
         grade: formGrade,
         remarks: formRemarks || undefined,
-        teacherId: user?.id || 'teacher-1'
+        teacherId: user.id
       });
 
       const st = students.find(s => s.id === targetStudentId);
@@ -327,7 +362,6 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
           value={selectedClassFilter}
           onChange={(e) => setSelectedClassFilter(e.target.value)}
         >
-          <option value="All">All Assigned Classes ({teacherClasses.map(c => `Class ${c}`).join(' & ')})</option>
           {teacherClasses.map(c => (
             <option key={c} value={c}>
               Class {c} ({c}-ാം ക്ലാസ്)
@@ -612,7 +646,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
                 syncExistingRecord(targetStudentId, e.target.value, formExamTerm);
               }}
             >
-              {subjectsList.map(s => (
+              {(modalSubjects.length > 0 ? modalSubjects : subjectsList).map(s => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({s.malayalamName})
                 </option>
@@ -704,5 +738,3 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     </div>
   );
 };
-
-

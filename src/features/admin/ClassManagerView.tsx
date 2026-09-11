@@ -7,25 +7,11 @@ import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
 import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog';
 import { useNotifications } from '../../context/NotificationContext';
-import { api } from '../../lib/axios';
+import { useClassStore } from '../../stores';
+import { ClassItem, TeacherOption } from '../../services/classService';
 import { Layers, Plus, Edit2, Trash2, Search, RefreshCw, UserCheck } from 'lucide-react';
 
-export interface ClassItem {
-  id: string;
-  name: string;
-  classTeacherId?: string;
-  classTeacherName?: string;
-  classTeacherPhone?: string;
-  studentCount: number;
-  averageAttendance: number;
-  averageProgress: number;
-}
-
-export interface TeacherOption {
-  id: string;
-  name: string;
-  designation?: string;
-}
+export type { ClassItem, TeacherOption };
 
 // Natural sort helper: "Class 1", "Class 2" ... "Class 10"
 const sortClassesInOrder = (list: ClassItem[]): ClassItem[] => {
@@ -35,9 +21,15 @@ const sortClassesInOrder = (list: ClassItem[]): ClassItem[] => {
 };
 
 export const ClassManagerView: React.FC = () => {
-  const [classesList, setClassesList] = useState<ClassItem[]>([]);
-  const [teachersList, setTeachersList] = useState<TeacherOption[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const classesList = useClassStore((s) => s.classes);
+  const teachersList = useClassStore((s) => s.teachersList);
+  const isLoading = useClassStore((s) => s.isLoading);
+  const fetchClasses = useClassStore((s) => s.fetchClasses);
+  const fetchTeachersList = useClassStore((s) => s.fetchTeachersList);
+  const createClass = useClassStore((s) => s.createClass);
+  const updateClass = useClassStore((s) => s.updateClass);
+  const deleteClass = useClassStore((s) => s.deleteClass);
+
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modal State
@@ -53,53 +45,10 @@ export const ClassManagerView: React.FC = () => {
 
   const { showToast } = useNotifications();
 
-  const loadTeachers = async () => {
-    try {
-      const res = await api.get<any>('/sadhr/muallims');
-      const rawData = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-      if (Array.isArray(rawData)) {
-        setTeachersList(
-          rawData.map((t: any) => ({
-            id: t.id || t._id,
-            name: t.name,
-            designation: t.designation || 'Usthad',
-          }))
-        );
-      }
-    } catch (err: any) {
-      console.error('Failed to load teachers list for classes:', err);
-    }
-  };
-
-  const loadClasses = async () => {
-    setIsLoading(true);
-    try {
-      const res = await api.get<any>('/sadhr/classes');
-      const rawData = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-      if (Array.isArray(rawData)) {
-        const mapped = rawData.map((c: any) => ({
-          id: c.id || c._id,
-          name: c.name,
-          classTeacherId: c.classTeacherId || undefined,
-          classTeacherName: c.classTeacherName || 'Unassigned',
-          classTeacherPhone: c.classTeacherPhone || undefined,
-          studentCount: c.studentCount || 0,
-          averageAttendance: c.averageAttendance || 95,
-          averageProgress: c.averageProgress || 88,
-        }));
-        setClassesList(sortClassesInOrder(mapped));
-      }
-    } catch (err: any) {
-      console.error('Failed to load classes:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadClasses();
-    loadTeachers();
-  }, []);
+    fetchClasses();
+    fetchTeachersList();
+  }, [fetchClasses, fetchTeachersList]);
 
   const handleOpenAdd = () => {
     setEditingClass(null);
@@ -122,9 +71,8 @@ export const ClassManagerView: React.FC = () => {
     if (!deletingClassId) return;
 
     try {
-      await api.delete(`/sadhr/classes/${deletingClassId}`);
+      await deleteClass(deletingClassId);
       showToast('✓ Class removed successfully.');
-      setClassesList((prev) => prev.filter((c) => c.id !== deletingClassId));
     } catch (err: any) {
       showToast(err?.response?.data?.message || err?.message || 'Failed to delete class.');
     } finally {
@@ -149,15 +97,14 @@ export const ClassManagerView: React.FC = () => {
       };
 
       if (editingClass) {
-        await api.patch(`/sadhr/classes/${editingClass.id}`, payload);
+        await updateClass(editingClass.id, payload);
         showToast(`✓ ${className} updated successfully.`);
       } else {
-        await api.post('/sadhr/classes', payload);
+        await createClass(payload);
         showToast(`✓ ${className} created successfully.`);
       }
 
       setIsModalOpen(false);
-      await loadClasses();
     } catch (err: any) {
       setFormError(err?.response?.data?.message || err?.message || 'Failed to save class details.');
     } finally {
@@ -193,7 +140,7 @@ export const ClassManagerView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button size="md" variant="outline" onClick={loadClasses} isLoading={isLoading}>
+          <Button size="md" variant="outline" onClick={() => fetchClasses()} isLoading={isLoading}>
             <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
           </Button>
           <Button size="md" variant="primary" onClick={handleOpenAdd} leftIcon={<Plus className="w-4 h-4" />}>
@@ -274,14 +221,7 @@ export const ClassManagerView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-[#E3EAE6] flex items-center justify-between gap-2">
-                <div className="bg-[#FAF8F2] px-3 py-1.5 rounded-xl flex items-center gap-1.5">
-                  <span className="text-[10px] text-[#667085] uppercase font-bold">Attendance:</span>
-                  <span className="font-extrabold text-emerald-700 text-xs">
-                    {cls.averageAttendance}%
-                  </span>
-                </div>
-
+              <div className="mt-4 pt-3 border-t border-[#E3EAE6] flex items-center justify-end gap-2">
                 <div className="flex items-center gap-1.5">
                   <Button
                     size="sm"

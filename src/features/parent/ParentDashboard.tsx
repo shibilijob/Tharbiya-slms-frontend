@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
@@ -13,22 +12,55 @@ import {
   CalendarCheck2,
   HeartHandshake,
   Award,
-  MessageSquareQuote,
-  TrendingUp,
   ChevronRight,
   Target,
-  Clock,
-  Sparkles,
-  CheckCircle2,
-  AlertCircle
+  CalendarDays,
 } from 'lucide-react';
-import { formatTimeAgo, formatDate } from '../../utils/formatters';
+import { formatDate } from '../../utils/formatters';
+import parentService, { type ChildTimetableResponse } from '../../services/parentService';
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export const ParentDashboard: React.FC = () => {
-  const { user } = useAuth();
-  const { selectedChildId, getStudentSummary, remarks, quranRecords } = useData();
+  const { selectedChildId, getStudentSummary, quranRecords } = useData();
+  const [childTimetable, setChildTimetable] = useState<ChildTimetableResponse | null>(null);
+  const [isTimetableLoading, setIsTimetableLoading] = useState(false);
+  const [timetableError, setTimetableError] = useState('');
 
   const summary = getStudentSummary(selectedChildId);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTimetables = async () => {
+      if (!selectedChildId) {
+        setChildTimetable(null);
+        return;
+      }
+
+      setIsTimetableLoading(true);
+      setTimetableError('');
+      try {
+        const timetable = await parentService.getChildTimetable(selectedChildId);
+        if (!cancelled) {
+          setChildTimetable(timetable);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setChildTimetable(null);
+          setTimetableError(err?.message || 'Failed to load timetable');
+        }
+      } finally {
+        if (!cancelled) setIsTimetableLoading(false);
+      }
+    };
+
+    loadTimetables();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedChildId]);
 
   if (!summary) {
     return (
@@ -39,7 +71,6 @@ export const ParentDashboard: React.FC = () => {
   }
 
   const { student, overallProgress, quranProgress, studiesProgress, attendancePercentage, akhlaqScore, latestAchievement, activeGoals } = summary;
-  const childRemarks = remarks.filter(r => r.studentId === student.id);
   const quranRecord = quranRecords.find(q => q.studentId === student.id);
 
   return (
@@ -93,7 +124,7 @@ export const ParentDashboard: React.FC = () => {
 
       {/* 2. FOUR CORE METRICS GRID */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Quran & Hifz */}
+        {/* Hifz */}
         <Link to="/parent/quran" className="group">
           <Card padding="sm" className="h-full group-hover:border-[#0F6B50] group-hover:shadow-md transition-all">
             <div className="flex items-center justify-between mb-2">
@@ -104,12 +135,12 @@ export const ParentDashboard: React.FC = () => {
                 Details <ChevronRight className="w-3.5 h-3.5 ml-0.5 group-hover:translate-x-0.5 transition-transform" />
               </span>
             </div>
-            <p className="text-xs font-bold uppercase tracking-wider text-[#667085]">Quran & Hifz</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-[#667085]">Hifz</p>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-2xl sm:text-3xl font-black text-[#1F2933]">{quranProgress}%</span>
             </div>
             <p className="text-[11px] text-[#667085] mt-1 truncate">
-              {quranRecord ? `Sabaq: ${quranRecord.currentSurahName}` : 'Surah Al-Mulk'}
+              {quranRecord?.currentSurahName ? `Sabaq: ${quranRecord.currentSurahName}` : 'No Hifz record yet'}
             </p>
           </Card>
         </Link>
@@ -220,6 +251,80 @@ export const ParentDashboard: React.FC = () => {
           </div>
         </Card>
       )}
+
+      <Card className="p-5 sm:p-6 bg-white border border-[#E3EAE6]">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#E3EAE6]">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-[#DDEDE5] text-[#0F6B50]">
+              <CalendarDays className="w-4 h-4" />
+            </span>
+            <div>
+              <h3 className="text-base font-bold text-[#1F2933]">Class Timetable</h3>
+              <p className="text-xs text-[#667085]">Timetable for the selected child&apos;s class</p>
+            </div>
+          </div>
+        </div>
+
+        {isTimetableLoading ? (
+          <div className="py-8 text-center text-xs text-[#667085]">Loading timetable...</div>
+        ) : timetableError ? (
+          <div className="py-8 text-center text-xs font-bold text-rose-700">{timetableError}</div>
+        ) : !student ? (
+          <div className="py-8 text-center text-xs text-[#667085]">No child selected or student not found.</div>
+        ) : (
+          <div className="rounded-2xl border border-[#E3EAE6] bg-[#FAF8F2] p-4">
+            {(() => {
+              const periods = childTimetable
+                ? DAYS.flatMap((day) => (childTimetable.schedules?.[day] || []).map((period) => ({ ...period, day })))
+                : [];
+
+              return (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-[#1F2933]">{student.name}</h4>
+                      <p className="text-xs text-[#667085]">{childTimetable?.className || `Class ${student.class}`}</p>
+                    </div>
+                    <Badge variant="green">{periods.length} Period{periods.length === 1 ? '' : 's'}</Badge>
+                  </div>
+
+                  {periods.length === 0 ? (
+                    <div className="py-5 text-center text-xs text-[#667085] bg-white rounded-xl border border-dashed border-[#E3EAE6]">
+                      No timetable available
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {DAYS.map((day) => {
+                        const dayPeriods = childTimetable?.schedules?.[day] || [];
+                        if (dayPeriods.length === 0) return null;
+
+                        return (
+                          <div key={day} className="rounded-xl bg-white border border-[#E3EAE6] p-3">
+                            <p className="text-xs font-black text-[#0F6B50] mb-2">{day}</p>
+                            <div className="space-y-2">
+                              {dayPeriods.map((period: any) => (
+                                <div key={period.id} className="flex items-center justify-between gap-3 text-xs">
+                                  <div>
+                                    <p className="font-bold text-[#1F2933]">{period.subject}</p>
+                                    <p className="text-[10px] text-[#667085]">Period {period.periodNumber}</p>
+                                  </div>
+                                  <p className="text-[10px] font-bold text-[#667085]">
+                                    {period.startTime} - {period.endTime}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+      </Card>
 
       {/* 5. ACHIEVEMENTS & RECENT MILESTONES BANNER */}
       {latestAchievement && (

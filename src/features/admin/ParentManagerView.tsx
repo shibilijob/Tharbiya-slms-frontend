@@ -5,9 +5,8 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog';
 import { parentService } from '../../services/parentService';
-import { useData } from '../../context/DataContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { UserSquare2, Plus, Edit2, Trash2, Phone, Mail, Users, UserCheck, Search, RefreshCw, Lock, Eye, EyeOff, Copy, Check, KeyRound } from 'lucide-react';
+import { UserSquare2, Plus, Edit2, Trash2, Phone, Mail, Users, UserCheck, Search, RefreshCw, Lock, Eye, EyeOff, Copy, Check, KeyRound, Download } from 'lucide-react';
 
 export interface ParentItem {
   id: string;
@@ -27,7 +26,6 @@ export interface ParentItem {
 }
 
 export const ParentManagerView: React.FC = () => {
-  const { students } = useData();
   const { showToast } = useNotifications();
 
   const [parentsList, setParentsList] = useState<ParentItem[]>([]);
@@ -44,6 +42,7 @@ export const ParentManagerView: React.FC = () => {
   const [editingParent, setEditingParent] = useState<ParentItem | null>(null);
   const [deletingParentId, setDeletingParentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form Fields
@@ -57,7 +56,12 @@ export const ParentManagerView: React.FC = () => {
   };
 
   const handleCopyCredentials = (parent: ParentItem) => {
-    const text = `Parent Portal Login:\nMobile: ${parent.phone}\nPassword: ${parent.password || '123456'}`;
+    if (!parent.password) {
+      showToast(`No stored password is available for ${parent.name}.`);
+      return;
+    }
+
+    const text = `Parent Portal Login:\nMobile: ${parent.phone}\nPassword: ${parent.password}`;
     navigator.clipboard.writeText(text).then(() => {
       setCopiedId(parent.id);
       showToast(`📋 Copied login credentials for ${parent.name}`);
@@ -76,7 +80,7 @@ export const ParentManagerView: React.FC = () => {
             name: p.name,
             phone: p.phone,
             email: p.email || '',
-            password: p.password || '123456',
+            password: p.password || '',
             role: 'PARENT',
             studentIds: p.studentIds || [],
             children: p.children || [],
@@ -86,30 +90,8 @@ export const ParentManagerView: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Failed to load parents:', err);
-      // Fallback: extract from students in context if backend is unreachable
-      const map = new Map<string, ParentItem>();
-      students.forEach((s) => {
-        if (s.parentId && s.parentName && !map.has(s.parentId)) {
-          map.set(s.parentId, {
-            id: s.parentId,
-            name: s.parentName,
-            role: 'PARENT',
-            phone: s.parentPhone || '',
-            email: '',
-            password: '123456',
-            studentIds: [s.id],
-            children: [{ id: s.id, name: s.name, admissionNumber: s.admissionNo, className: `Class ${s.class}` }],
-            madrasaName: 'Darunnajath Mundambra',
-          });
-        } else if (s.parentId && map.has(s.parentId)) {
-          const existing = map.get(s.parentId)!;
-          if (!existing.studentIds.includes(s.id)) {
-            existing.studentIds.push(s.id);
-            existing.children?.push({ id: s.id, name: s.name, admissionNumber: s.admissionNo, className: `Class ${s.class}` });
-          }
-        }
-      });
-      setParentsList(Array.from(map.values()));
+      setParentsList([]);
+      showToast(err?.message || 'Failed to load parent accounts.');
     } finally {
       setIsLoading(false);
     }
@@ -117,14 +99,14 @@ export const ParentManagerView: React.FC = () => {
 
   useEffect(() => {
     loadParents();
-  }, [students]);
+  }, []);
 
   const handleOpenAdd = () => {
     setEditingParent(null);
     setName('');
     setPhone('9847');
     setEmail('');
-    setPassword('123456');
+    setPassword('');
     setIsModalPasswordVisible(false);
     setFormError(null);
     setIsModalOpen(true);
@@ -173,7 +155,6 @@ export const ParentManagerView: React.FC = () => {
           name: name.trim(),
           phone: phone.trim(),
           email: email.trim() ? email.trim() : undefined,
-          password: password.trim() ? password.trim() : '123456',
         };
 
         const res = await parentService.createParent(createPayload);
@@ -186,6 +167,18 @@ export const ParentManagerView: React.FC = () => {
       setFormError(err?.message || 'Failed to save parent details.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDownloadAllParentDetails = async () => {
+    setIsDownloading(true);
+    try {
+      await parentService.downloadAllParentDetails();
+      showToast('Parent details PDF downloaded successfully.');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to download parent details PDF.');
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -230,7 +223,17 @@ export const ParentManagerView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Button
+            size="md"
+            variant="outline"
+            onClick={handleDownloadAllParentDetails}
+            isLoading={isDownloading}
+            disabled={isDownloading}
+            leftIcon={<Download className="w-4 h-4" />}
+          >
+            Download All Parent Details
+          </Button>
           <Button size="md" variant="outline" onClick={loadParents} isLoading={isLoading}>
             <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
           </Button>
@@ -282,16 +285,7 @@ export const ParentManagerView: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filteredParents.map((parent) => {
-            // Find linked students from students array or parent's populated children
-            const linkedFromContext = students.filter(
-              (s) => s.parentId === parent.id || parent.studentIds.includes(s.id)
-            );
-            const childrenToShow = parent.children && parent.children.length > 0 ? parent.children : linkedFromContext.map(s => ({
-              id: s.id,
-              name: s.name,
-              admissionNumber: s.admissionNo,
-              className: `Class ${s.class}`
-            }));
+            const childrenToShow = parent.children || [];
 
             return (
               <Card key={parent.id} className="p-5 sm:p-6 hover:border-[#0F6B50] transition-all">
@@ -337,7 +331,7 @@ export const ParentManagerView: React.FC = () => {
                       <p className="text-[10px] font-bold text-[#667085] uppercase tracking-wider">Portal Password / PIN</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-sm font-black font-mono tracking-wider text-[#1F2933]">
-                          {revealedPasswords[parent.id] ? (parent.password || '123456') : '••••••••'}
+                          {revealedPasswords[parent.id] ? (parent.password || 'Not available') : '••••••••'}
                         </span>
                       </div>
                     </div>
@@ -439,32 +433,34 @@ export const ParentManagerView: React.FC = () => {
             leftIcon={<Mail className="w-4 h-4" />}
           />
 
-          <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-[#1F2933]">
-              {editingParent ? 'Password / PIN (Leave unchanged or enter new)' : 'Password / PIN for Parent Portal'}
-            </label>
-            <div className="relative">
-              <input
-                type={isModalPasswordVisible ? 'text' : 'password'}
-                placeholder={editingParent ? 'Enter new password' : 'e.g. 123456'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#FAF8F2] border border-[#E3EAE6] rounded-xl px-3.5 py-2.5 pl-10 pr-10 text-xs sm:text-sm text-[#1F2933] font-mono placeholder-[#667085] focus:border-[#0F6B50] focus:ring-1 focus:ring-[#0F6B50] outline-none"
-              />
-              <Lock className="w-4 h-4 text-[#667085] absolute left-3.5 top-3" />
-              <button
-                type="button"
-                onClick={() => setIsModalPasswordVisible(!isModalPasswordVisible)}
-                className="p-1 text-[#667085] hover:text-[#1F2933] absolute right-3 top-2.5"
-                title={isModalPasswordVisible ? "Hide password" : "Show password"}
-              >
-                {isModalPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          {editingParent ? (
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[#1F2933]">
+                Password / PIN (Leave unchanged or enter new)
+              </label>
+              <div className="relative">
+                <input
+                  type={isModalPasswordVisible ? 'text' : 'password'}
+                  placeholder="Enter new password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-[#FAF8F2] border border-[#E3EAE6] rounded-xl px-3.5 py-2.5 pl-10 pr-10 text-xs sm:text-sm text-[#1F2933] font-mono placeholder-[#667085] focus:border-[#0F6B50] focus:ring-1 focus:ring-[#0F6B50] outline-none"
+                />
+                <Lock className="w-4 h-4 text-[#667085] absolute left-3.5 top-3" />
+                <button
+                  type="button"
+                  onClick={() => setIsModalPasswordVisible(!isModalPasswordVisible)}
+                  className="p-1 text-[#667085] hover:text-[#1F2933] absolute right-3 top-2.5"
+                  title={isModalPasswordVisible ? "Hide password" : "Show password"}
+                >
+                  {isModalPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-[#667085]">
+                Parents will use their Mobile Number ({phone || 'Phone'}) and this Password to sign into the Parent Portal.
+              </p>
             </div>
-            <p className="text-[11px] text-[#667085]">
-              Parents will use their Mobile Number ({phone || 'Phone'}) and this Password to sign into the Parent Portal.
-            </p>
-          </div>
+          ) : null}
 
           <div className="flex justify-end gap-2 pt-3 border-t border-[#E3EAE6]">
             <Button type="button" variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>

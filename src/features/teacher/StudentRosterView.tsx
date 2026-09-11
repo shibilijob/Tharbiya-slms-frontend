@@ -23,7 +23,7 @@ import {
   Heart
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
-import { api } from '../../lib/axios';
+import { useClassStore } from '../../stores';
 
 export const StudentRosterView: React.FC = () => {
   const { students, getStudentSummary } = useData();
@@ -33,41 +33,20 @@ export const StudentRosterView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [activeStudent, setActiveStudent] = useState<Student | null>(null);
-  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
+
+  const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
+  const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
 
   React.useEffect(() => {
-    api.get<any>('/faculty-members')
-      .then(res => {
-        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        if (Array.isArray(teachers) && teachers.length > 0) {
-          const matched = teachers.find((t: any) =>
-            (user?.id && (t.id === user.id || t._id === user.id)) ||
-            (user?.email && t.email === user.email) ||
-            (user?.phone && t.phone === user.phone) ||
-            (user?.name && t.name && (
-              t.name.toLowerCase() === user.name.toLowerCase() ||
-              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
-              user.name.toLowerCase().includes(t.name.toLowerCase())
-            ))
-          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
-
-          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
-            const classes = matched.assignedClasses
-              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-              .filter(Boolean);
-            if (classes.length > 0) {
-              setDynamicClasses(classes);
-            }
-          }
-        }
-      })
-      .catch(() => {});
-  }, [user]);
+    if (user) {
+      fetchAssignedClassesForTeacher(user);
+    }
+  }, [user, fetchAssignedClassesForTeacher]);
 
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
   const teacherClasses = React.useMemo(() => {
-    if (dynamicClasses.length > 0) return dynamicClasses;
+    if (teacherAssignedClasses.length > 0) return teacherAssignedClasses;
 
     let rawList: any[] = [];
     if (Array.isArray(teacherUser?.assignedClasses)) {
@@ -94,7 +73,7 @@ export const StudentRosterView: React.FC = () => {
       .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
     const unique = Array.from(new Set(fromStudents)).filter(Boolean);
     return unique.length > 0 ? unique : ['4'];
-  }, [dynamicClasses, teacherUser, students, user]);
+  }, [teacherAssignedClasses, teacherUser, students, user]);
 
   // Filter students assigned to teacher's assigned classes
   const teacherStudents = students.filter(s => {

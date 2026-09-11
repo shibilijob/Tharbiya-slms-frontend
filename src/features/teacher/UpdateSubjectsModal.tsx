@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '../../components/common/Modal';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { Badge } from '../../components/common/Badge';
 import { useNotifications } from '../../context/NotificationContext';
-import { subjectService } from '../../services/subjectService';
+import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
+import { useSubjectStore } from '../../stores';
 import { SubjectMeta } from '../../data/madrasaCurriculum';
 import { SubjectName } from '../../types';
 import {
@@ -16,23 +18,83 @@ import {
   BookOpen,
   Sparkles,
   Layers,
-  Loader2
+  Loader2,
+  GraduationCap
 } from 'lucide-react';
 
 interface UpdateSubjectsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialClass?: string;
+  assignedClasses?: string[];
   onUpdated?: () => void;
 }
 
 export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
   isOpen,
   onClose,
+  initialClass,
+  assignedClasses,
   onUpdated
 }) => {
+  const { user } = useAuth();
+  const { students } = useData();
   const { showToast } = useNotifications();
-  const [subjects, setSubjects] = useState<SubjectMeta[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+
+  // Resolve assigned classes for this Muallim
+  const availableClasses = useMemo(() => {
+    if (assignedClasses && assignedClasses.length > 0) {
+      return Array.from(new Set(assignedClasses.map(c => String(c).replace(/^Class\s*/i, '').trim())))
+        .filter(Boolean)
+        .sort((a, b) => Number(a) - Number(b));
+    }
+
+    const teacherUser = user as any;
+    let rawList: any[] = [];
+    if (Array.isArray(teacherUser?.assignedClasses)) {
+      rawList = teacherUser.assignedClasses;
+    } else if (typeof teacherUser?.assignedClasses === 'string') {
+      try {
+        const parsed = JSON.parse(teacherUser.assignedClasses);
+        rawList = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        rawList = [teacherUser.assignedClasses];
+      }
+    } else if (teacherUser?.assignedClass) {
+      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+    }
+
+    const cleaned = rawList
+      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+      .filter(Boolean);
+
+    if (cleaned.length > 0) {
+      return Array.from(new Set(cleaned)).sort((a, b) => Number(a) - Number(b));
+    }
+
+    // Infer from assigned students
+    const fromStudents = students
+      .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
+      .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
+    const uniqueFromStudents = Array.from(new Set(fromStudents)).filter(Boolean).sort((a, b) => Number(a) - Number(b));
+
+    if (uniqueFromStudents.length > 0) {
+      return uniqueFromStudents;
+    }
+
+    return [initialClass ? initialClass.replace(/^Class\s*/i, '').trim() : '5'];
+  }, [assignedClasses, user, students, initialClass]);
+
+  const [selectedClass, setSelectedClass] = useState<string>(
+    initialClass ? initialClass.replace(/^Class\s*/i, '').trim() : (availableClasses[0] || '5')
+  );
+  const subjects = useSubjectStore((s) => s.subjects);
+  const isLoading = useSubjectStore((s) => s.isLoading);
+  const fetchSubjects = useSubjectStore((s) => s.fetchSubjects);
+  const addSubjectStore = useSubjectStore((s) => s.addSubject);
+  const updateSubjectStore = useSubjectStore((s) => s.updateSubject);
+  const deleteSubjectStore = useSubjectStore((s) => s.deleteSubject);
+
   const [isEditingSubject, setIsEditingSubject] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -45,23 +107,35 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
   const [color, setColor] = useState('#0F6B50');
   const [isSaving, setIsSaving] = useState(false);
 
-  const loadSubjects = async () => {
-    setIsLoading(true);
+  const cleanClass = selectedClass.replace(/^Class\s*/i, '').trim() || availableClasses[0] || '5';
+
+  const loadSubjects = async (cls: string = cleanClass) => {
     try {
-      const data = await subjectService.fetchFromApi();
-      setSubjects(data);
+      await fetchSubjects(cls);
     } catch (e) {
       console.error("Failed to load subjects", e);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     if (isOpen) {
-      loadSubjects();
+      const target = (initialClass && availableClasses.includes(initialClass.replace(/^Class\s*/i, '').trim()))
+        ? initialClass.replace(/^Class\s*/i, '').trim()
+        : (availableClasses[0] || '5');
+
+      setSelectedClass(target);
+      loadSubjects(target);
+      setIsEditingSubject(false);
+      setEditingId(null);
     }
-  }, [isOpen]);
+  }, [isOpen, initialClass, availableClasses]);
+
+  const handleClassChange = (newCls: string) => {
+    setSelectedClass(newCls);
+    setIsEditingSubject(false);
+    setEditingId(null);
+    loadSubjects(newCls);
+  };
 
   const handleOpenAdd = () => {
     setEditingId(null);
@@ -97,24 +171,29 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
       arabicName: arabicName.trim() || name.trim(),
       icon: 'BookOpen',
       color,
-      description: description.trim() || 'Curriculum subject for Darunnajath Mundambra'
+      description: description.trim() || `Class ${cleanClass} curriculum subject for Darunnajath Mundambra`,
+      classId: cleanClass
     };
 
     try {
-      let updated: SubjectMeta[];
       if (editingId) {
-        updated = await subjectService.updateSubject(editingId, subjectObj);
-        showToast(`✓ Subject "${name}" updated in database!`);
+        await updateSubjectStore(editingId, subjectObj, cleanClass);
+        showToast(`✓ Subject "${name}" updated for Class ${cleanClass}!`);
       } else {
-        updated = await subjectService.addSubject(subjectObj);
-        showToast(`✓ New subject "${name}" added to database!`);
+        await addSubjectStore(subjectObj, cleanClass);
+        showToast(`✓ New subject "${name}" added to Class ${cleanClass}!`);
       }
 
-      setSubjects(updated);
       setIsEditingSubject(false);
       if (onUpdated) onUpdated();
     } catch (err: any) {
-      showToast(`❌ Failed to save subject: ${err.message || 'Error'}`);
+      const errMsg =
+        err.response?.data?.message ||
+        err.data?.message ||
+        (typeof err.response?.data === 'string' ? err.response.data : null) ||
+        err.message ||
+        'Error saving subject';
+      showToast(`❌ Failed to save subject: ${errMsg}`);
     } finally {
       setIsSaving(false);
     }
@@ -122,9 +201,8 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
 
   const handleDeleteSubject = async (subId: string) => {
     try {
-      const updated = await subjectService.deleteSubject(subId);
-      setSubjects(updated);
-      showToast(`✓ Subject removed from database.`);
+      await deleteSubjectStore(subId, cleanClass);
+      showToast(`✓ Subject removed from Class ${cleanClass}.`);
       if (onUpdated) onUpdated();
     } catch (err: any) {
       showToast(`❌ Failed to delete subject: ${err.message || 'Error'}`);
@@ -134,8 +212,8 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
-      await loadSubjects();
-      showToast(`✓ All subject configurations updated in database!`);
+      await loadSubjects(cleanClass);
+      showToast(`✓ Subject configurations updated for Class ${cleanClass}!`);
       if (onUpdated) onUpdated();
       onClose();
     } finally {
@@ -148,10 +226,45 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Update Madrasa Subjects & Curriculum"
-      subtitle="Configure Core Subjects, Malayalam Titles & Syllabus Targets in Database"
+      subtitle="Configure Core Subjects, Malayalam Titles & Syllabus Targets for Assigned Classes"
       maxWidth="3xl"
     >
       <div className="space-y-5">
+        {/* Assigned Class Selection Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white rounded-2xl border border-[#E3EAE6] shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="p-2 rounded-xl bg-[#DDEDE5] text-[#0F6B50]">
+              <GraduationCap className="w-4 h-4" />
+            </span>
+            <div>
+              <span className="text-xs font-black uppercase tracking-wider text-[#1F2933]">
+                Your Assigned {availableClasses.length === 1 ? 'Class' : 'Classes'}:
+              </span>
+              <p className="text-[11px] text-[#667085]">Only classes assigned to your Muallim profile</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {availableClasses.map((cls) => {
+              const isActive = cleanClass === cls;
+              return (
+                <button
+                  key={cls}
+                  type="button"
+                  onClick={() => handleClassChange(cls)}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
+                    isActive
+                      ? 'bg-[#0F6B50] text-white shadow-xs'
+                      : 'bg-[#FAF8F2] text-[#1F2933] hover:bg-[#DDEDE5] border border-[#E3EAE6]'
+                  }`}
+                >
+                  Class {cls}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Top Info Banner */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-[#FAF8F2] rounded-2xl border border-[#E3EAE6]">
           <div className="flex items-center gap-3">
@@ -160,10 +273,10 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
             </span>
             <div>
               <h4 className="text-sm font-extrabold text-[#1F2933]">
-                {subjects.length} Database Curriculum Subjects
+                {subjects.length} Subjects for Class {cleanClass}
               </h4>
               <p className="text-xs text-[#667085] mt-0.5">
-                Darunnajath Mundambra Islamic Education Board (Stored in MongoDB)
+                Each assigned class manages its own isolated subjects in MongoDB
               </p>
             </div>
           </div>
@@ -186,7 +299,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-12 text-[#667085]">
             <Loader2 className="w-8 h-8 animate-spin text-[#0F6B50] mb-2" />
-            <p className="text-sm font-medium">Loading subjects from database...</p>
+            <p className="text-sm font-medium">Loading subjects for Class {cleanClass}...</p>
           </div>
         ) : isEditingSubject ? (
           /* Subject Editor Form */
@@ -195,11 +308,11 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-[#0F6B50]" />
                 <h4 className="text-sm font-extrabold text-[#1F2933]">
-                  {editingId ? `Edit Subject: ${name}` : 'Add New Subject'}
+                  {editingId ? `Edit Subject: ${name}` : `Add Subject to Class ${cleanClass}`}
                 </h4>
               </div>
               <Badge variant="green" size="sm">
-                Curriculum Editor
+                Class {cleanClass} Curriculum
               </Badge>
             </div>
 
@@ -284,11 +397,11 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
         ) : subjects.length === 0 ? (
           <div className="text-center py-10 bg-[#FAF8F2] rounded-2xl border border-dashed border-[#E3EAE6]">
             <BookOpen className="w-10 h-10 mx-auto text-[#667085] mb-2 opacity-50" />
-            <p className="text-sm font-bold text-[#1F2933]">No subjects in database</p>
-            <p className="text-xs text-[#667085] mt-1">Click "Add Subject" above to add your first subject.</p>
+            <p className="text-sm font-bold text-[#1F2933]">No subjects in Class {cleanClass}</p>
+            <p className="text-xs text-[#667085] mt-1">Click "Add Subject" above to add subjects specifically for Class {cleanClass}.</p>
           </div>
         ) : (
-          /* List of Subjects */
+          /* List of Subjects for this Class */
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {subjects.map(subject => (
               <div
@@ -344,7 +457,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
         <div className="flex items-center justify-between pt-3 border-t border-[#E3EAE6]">
           <div className="flex items-center gap-1.5 text-xs text-[#667085]">
             <Sparkles className="w-4 h-4 text-[#C9A227]" />
-            <span>Changes are persisted in MongoDB database</span>
+            <span>Class {cleanClass} changes are persisted in MongoDB database</span>
           </div>
 
           <div className="flex gap-2">

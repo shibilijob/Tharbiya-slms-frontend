@@ -1,8 +1,6 @@
 import { Achievement } from '../types';
 import { api } from '../lib/axios';
 
-const STORAGE_KEY = 'tharbiyah_achievements';
-
 export const achievementService = {
   async getAll(): Promise<Achievement[]> {
     try {
@@ -20,17 +18,8 @@ export const achievementService = {
           awardedByTeacherName: a.awardedByName || 'Usthad'
         }));
       }
-    } catch {
-      // Offline fallback
-    }
-
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (data) {
-      try {
-        return JSON.parse(data);
-      } catch (e) {
-        console.error("Failed to parse stored achievements", e);
-      }
+    } catch (err) {
+      console.warn("Failed to fetch achievements from backend:", err);
     }
     return [];
   },
@@ -51,12 +40,10 @@ export const achievementService = {
           awardedByTeacherName: a.awardedByName || 'Usthad'
         }));
       }
-    } catch {
-      // Offline fallback
+    } catch (err) {
+      console.warn(`Failed to fetch achievements for student ${studentId}:`, err);
     }
-
-    const records = await this.getAll();
-    return records.filter(r => r.studentId === studentId);
+    return [];
   },
 
   async awardAchievement(
@@ -87,36 +74,23 @@ export const achievementService = {
           awardedByTeacherName: res.data.awardedByName || achievement.awardedByTeacherName || 'Usthad'
         };
 
-        const records = await this.getAll();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([created, ...records]));
         return created;
       }
-    } catch {
-      // Offline fallback
+    } catch (err) {
+      console.error("Backend error awarding achievement:", err);
+      throw err;
     }
 
-    const records = await this.getAll();
-    const newRecord: Achievement = {
-      ...achievement,
-      id: `ach-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0]
-    };
-    const updated = [newRecord, ...records];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    return newRecord;
+    throw new Error('Backend failed to return created achievement');
   },
 
   async deleteAchievement(id: string): Promise<boolean> {
     try {
       await api.delete(`/muallim/achievements/${id}`);
-    } catch {
-      // Offline fallback
+    } catch (err) {
+      console.error("Backend error deleting achievement:", err);
+      throw err;
     }
-
-    const records = await this.getAll();
-    const filtered = records.filter(r => r.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
     return true;
   }
 };
-

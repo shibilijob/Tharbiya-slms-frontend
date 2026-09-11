@@ -27,7 +27,6 @@ export const MOCK_ADMIN: SadhrMuallimUser = {
   phone: "9847001122",
   designation: "Sadhr Muallim (Sadhr Mudarris) & Class 7 Mentor",
   assignedClasses: ["7", "6"],
-  assignedSubjects: ["Fiqh", "Quran", "Islamic Studies"],
   madrasaName: CURRENT_MADRASA_NAME
 };
 

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Notification } from '../types';
 import { notificationService } from '../services/notificationService';
 import { useAuth } from './AuthContext';
+import { useUiStore } from '../stores/uiStore';
 
 interface NotificationContextType {
   notifications: Notification[];
@@ -19,7 +20,9 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastMessage = useUiStore((state) => state.toastMessage);
+  const showToast = useUiStore((state) => state.showToast);
+  const clearToast = useUiStore((state) => state.clearToast);
 
   useEffect(() => {
     const load = async () => {
@@ -27,8 +30,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const userNotifs = await notificationService.getByUser(user.id);
         setNotifications(userNotifs);
       } else {
-        const all = await notificationService.getAll();
-        setNotifications(all);
+        setNotifications([]);
       }
     };
     load();
@@ -54,14 +56,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     showToast(created.title);
   };
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 4000);
-  };
-
-  const clearToast = () => setToastMessage(null);
 
   return (
     <NotificationContext.Provider

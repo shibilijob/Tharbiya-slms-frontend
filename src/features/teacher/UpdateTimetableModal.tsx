@@ -6,8 +6,7 @@ import { Select } from '../../components/common/Select';
 import { Badge } from '../../components/common/Badge';
 import { useNotifications } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
-import { timetableService } from '../../services/timetableService';
-import { subjectService } from '../../services/subjectService';
+import { useTimetableStore, useSubjectStore } from '../../stores';
 import { MadrasaDay, TimetablePeriod } from '../../types';
 import { SubjectMeta } from '../../data/madrasaCurriculum';
 import {
@@ -20,7 +19,6 @@ import {
   BookOpen,
   MapPin,
   User,
-  RotateCcw,
   Sparkles
 } from 'lucide-react';
 
@@ -60,8 +58,17 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
 
   const [selectedClass, setSelectedClass] = useState(initialClass || availableClasses[0]);
   const [selectedDay, setSelectedDay] = useState<MadrasaDay>('Sunday');
-  const [periods, setPeriods] = useState<TimetablePeriod[]>([]);
-  const [subjectsList, setSubjectsList] = useState<SubjectMeta[]>([]);
+
+  // Zustand stores
+  const classSchedule = useTimetableStore((s) => s.classSchedule);
+  const fetchSchedule = useTimetableStore((s) => s.fetchSchedule);
+  const updatePeriodStore = useTimetableStore((s) => s.updatePeriod);
+  const deletePeriodStore = useTimetableStore((s) => s.deletePeriod);
+
+  const subjectsList = useSubjectStore((s) => s.subjects);
+  const fetchSubjects = useSubjectStore((s) => s.fetchSubjects);
+
+  const periods = classSchedule[selectedDay] || [];
 
   // Period Form State (for adding / editing a period)
   const [isEditingPeriod, setIsEditingPeriod] = useState(false);
@@ -71,22 +78,18 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
   const [endTime, setEndTime] = useState('07:45 AM');
   const [subjectName, setSubjectName] = useState('Quran');
   const [subjectMalayalam, setSubjectMalayalam] = useState('ഖുർആൻ പാരായണം');
-  const [teacherName, setTeacherName] = useState(user?.name || 'Usthad Shihabudheen Saadi');
+  const [teacherName, setTeacherName] = useState(user?.name || '');
   const [room, setRoom] = useState('Dars Hall 5');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load subjects and timetable for selected class and day
+  // Load subjects and timetable for selected class
   useEffect(() => {
     if (isOpen) {
-      subjectService.fetchFromApi().then((list) => {
-        if (list && list.length > 0) setSubjectsList(list);
-        else setSubjectsList(subjectService.getAll());
-      });
-      const daySchedule = timetableService.getDaySchedule(selectedClass, selectedDay);
-      setPeriods(daySchedule);
+      fetchSubjects(selectedClass);
+      fetchSchedule(selectedClass);
     }
-  }, [isOpen, selectedClass, selectedDay]);
+  }, [isOpen, selectedClass, fetchSubjects, fetchSchedule]);
 
   const handleOpenAddPeriod = () => {
     setEditingPeriodId(null);
@@ -96,7 +99,7 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
     setEndTime('09:15 AM');
     setSubjectName(subjectsList[0]?.name || 'Quran');
     setSubjectMalayalam(subjectsList[0]?.malayalamName || 'ഖുർആൻ പാരായണം');
-    setTeacherName(user?.name || 'Usthad Shihabudheen Saadi');
+    setTeacherName(user?.name || '');
     setRoom(`Dars Hall ${selectedClass.replace('Class ', '')}`);
     setNotes('');
     setIsEditingPeriod(true);
@@ -123,7 +126,7 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
     }
   };
 
-  const handleSavePeriod = (e: React.FormEvent) => {
+  const handleSavePeriod = async (e: React.FormEvent) => {
     e.preventDefault();
     const periodObj: TimetablePeriod = {
       id: editingPeriodId || `period-${Date.now()}`,
@@ -137,25 +140,24 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
       notes
     };
 
-    const updated = timetableService.updatePeriod(selectedClass, selectedDay, periodObj);
-    setPeriods(updated);
-    setIsEditingPeriod(false);
-    showToast(`✓ Period ${periodNum} (${subjectName}) updated for ${selectedDay}!`);
-    if (onUpdated) onUpdated();
+    try {
+      await updatePeriodStore(selectedClass, selectedDay, periodObj);
+      setIsEditingPeriod(false);
+      showToast(`✓ Period ${periodNum} (${subjectName}) updated for ${selectedDay}!`);
+      if (onUpdated) onUpdated();
+    } catch (err: any) {
+      showToast(`❌ Failed to save period: ${err.message || 'Error'}`);
+    }
   };
 
-  const handleDeletePeriod = (id: string) => {
-    const updated = timetableService.deletePeriod(selectedClass, selectedDay, id);
-    setPeriods(updated);
-    showToast(`Period removed from ${selectedDay} schedule.`);
-    if (onUpdated) onUpdated();
-  };
-
-  const handleResetSchedule = () => {
-    const defaultData = timetableService.resetClassTimetable(selectedClass);
-    setPeriods(defaultData[selectedDay] || []);
-    showToast(`✓ Class ${selectedClass} timetable reset to Madrasa default.`);
-    if (onUpdated) onUpdated();
+  const handleDeletePeriod = async (id: string) => {
+    try {
+      await deletePeriodStore(selectedClass, selectedDay, id);
+      showToast(`Period removed from ${selectedDay} schedule.`);
+      if (onUpdated) onUpdated();
+    } catch (err: any) {
+      showToast(`❌ Failed to delete period: ${err.message || 'Error'}`);
+    }
   };
 
   const handleSaveAll = () => {
@@ -203,17 +205,6 @@ export const UpdateTimetableModal: React.FC<UpdateTimetableModalProps> = ({
                 </option>
               ))}
             </Select>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleResetSchedule}
-              className="text-xs shrink-0"
-              title="Reset to default routine"
-            >
-              <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reset
-            </Button>
           </div>
         </div>
 

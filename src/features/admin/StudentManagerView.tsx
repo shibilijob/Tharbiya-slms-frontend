@@ -11,6 +11,7 @@ import { Avatar } from '../../components/common/Avatar';
 import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog';
 import { Student, Gender, StudentStatus } from '../../types';
 import { api } from '../../lib/axios';
+import { studentService } from '../../services/studentService';
 import {
   GraduationCap,
   Plus,
@@ -19,7 +20,8 @@ import {
   Trash2,
   Users,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Download
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
 
@@ -54,15 +56,7 @@ export const StudentManagerView: React.FC = () => {
 
   // Dynamic dropdown data from backend
   const [parentsList, setParentsList] = useState<ParentOption[]>([]);
-  const [classesList, setClassesList] = useState<ClassOption[]>([
-    { id: 'c1', name: 'Class 1' },
-    { id: 'c2', name: 'Class 2' },
-    { id: 'c3', name: 'Class 3' },
-    { id: 'c4', name: 'Class 4' },
-    { id: 'c5', name: 'Class 5' },
-    { id: 'c6', name: 'Class 6' },
-    { id: 'c7', name: 'Class 7' },
-  ]);
+  const [classesList, setClassesList] = useState<ClassOption[]>([]);
 
   // Load parents and classes from the database
   const loadDropdownData = async () => {
@@ -111,14 +105,15 @@ export const StudentManagerView: React.FC = () => {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Form fields
   const [name, setName] = useState('');
   const [malayalamName, setMalayalamName] = useState('');
   const [admissionNo, setAdmissionNo] = useState('');
   const [gender, setGender] = useState<Gender>('MALE');
-  const [dob, setDob] = useState('2015-05-14');
-  const [studentClass, setStudentClass] = useState('5');
+  const [dob, setDob] = useState('');
+  const [studentClass, setStudentClass] = useState('');
   const [parentId, setParentId] = useState('');
   const [admissionDate, setAdmissionDate] = useState('2022-06-01');
   const [status, setStatus] = useState<StudentStatus>('ACTIVE');
@@ -159,10 +154,10 @@ export const StudentManagerView: React.FC = () => {
     setEditingStudent(null);
     setName('');
     setMalayalamName('');
-    setAdmissionNo(`DN-2026-${Math.floor(100 + Math.random() * 900)}`);
+    setAdmissionNo('');
     setGender('MALE');
-    setDob('2015-05-14');
-    const firstCls = classesList[0]?.name.replace(/^Class\s*/i, '') || '1';
+    setDob('');
+    const firstCls = classesList[0]?.name.replace(/^Class\s*/i, '') || '';
     setStudentClass(firstCls);
     setParentId(parentsList[0]?.id || '');
     setAdmissionDate(new Date().toISOString().split('T')[0]);
@@ -176,7 +171,7 @@ export const StudentManagerView: React.FC = () => {
     setMalayalamName(student.malayalamName || '');
     setAdmissionNo(student.admissionNo);
     setGender(student.gender);
-    setDob(student.dob || '2015-05-14');
+    setDob(student.dob || '');
     setStudentClass(String(student.class).replace(/^Class\s*/i, ''));
     setParentId(student.parentId || '');
     setAdmissionDate(student.admissionDate || new Date().toISOString().split('T')[0]);
@@ -187,12 +182,24 @@ export const StudentManagerView: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!admissionNo.trim()) {
+      showToast('Admission number is required.');
+      return;
+    }
+    if (!studentClass) {
+      showToast('Please select a class from the database.');
+      return;
+    }
+    if (!parentId) {
+      showToast('Please select a parent from the database.');
+      return;
+    }
 
     setIsSaving(true);
     try {
       const parentObj = parentsList.find(p => p.id === parentId);
-      const parentName = parentObj?.name || 'Parent';
-      const parentPhone = parentObj?.phone || '+91 98470 00000';
+      const parentName = parentObj?.name || '';
+      const parentPhone = parentObj?.phone || '';
 
       if (editingStudent) {
         await updateStudent(editingStudent.id, {
@@ -202,7 +209,7 @@ export const StudentManagerView: React.FC = () => {
           gender,
           dob,
           class: studentClass,
-          parentId: parentId || '',
+          parentId,
           parentName,
           parentPhone,
           admissionDate,
@@ -217,19 +224,20 @@ export const StudentManagerView: React.FC = () => {
           gender,
           dob,
           class: studentClass,
-          parentId: parentId || '',
+          parentId,
           parentName,
           parentPhone,
-          assignedTeacherId: 'teacher-1',
-          teacherName: 'Usthad Shihabudheen Saadi',
+          assignedTeacherId: '',
+          teacherName: '',
           admissionDate,
           status,
         });
         showToast(`✓ New student ${name} enrolled successfully!`);
       }
       setIsModalOpen(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to save student", err);
+      showToast(err?.message || "Failed to save student");
     } finally {
       setIsSaving(false);
     }
@@ -243,6 +251,18 @@ export const StudentManagerView: React.FC = () => {
       setDeletingStudentId(null);
     } catch (e) {
       console.error("Failed to delete", e);
+    }
+  };
+
+  const handleDownloadAllActiveStudents = async () => {
+    setIsDownloading(true);
+    try {
+      await studentService.downloadAllActiveStudents();
+      showToast('Active students PDF downloaded successfully.');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to download active students PDF.');
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -264,14 +284,26 @@ export const StudentManagerView: React.FC = () => {
           </p>
         </div>
 
-        <Button
-          size="md"
-          variant="primary"
-          onClick={handleOpenAdd}
-          leftIcon={<Plus className="w-4 h-4" />}
-        >
-          Enroll New Student
-        </Button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Button
+            size="md"
+            variant="outline"
+            onClick={handleDownloadAllActiveStudents}
+            isLoading={isDownloading}
+            disabled={isDownloading}
+            leftIcon={<Download className="w-4 h-4" />}
+          >
+            Download All Active Students
+          </Button>
+          <Button
+            size="md"
+            variant="primary"
+            onClick={handleOpenAdd}
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Enroll New Student
+          </Button>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -584,7 +616,7 @@ export const StudentManagerView: React.FC = () => {
             <Button type="button" variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="sm" isLoading={isSaving}>
+            <Button type="submit" variant="primary" size="sm" isLoading={isSaving} disabled={isSaving}>
               {editingStudent ? "Save Changes" : "Enroll Student"}
             </Button>
           </div>

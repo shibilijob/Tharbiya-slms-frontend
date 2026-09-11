@@ -26,7 +26,7 @@ import { UpdateSubjectsModal } from '../../features/teacher/UpdateSubjectsModal'
 import { UpdatePracticalScoreModal } from '../../features/teacher/UpdatePracticalScoreModal';
 
 import { useData } from '../../context/DataContext';
-import { api } from '../../lib/axios';
+import { useClassStore } from '../../stores';
 
 export const TeacherLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -39,40 +39,18 @@ export const TeacherLayout: React.FC = () => {
   const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
   const [isPracticalScoreModalOpen, setIsPracticalScoreModalOpen] = useState(false);
 
-  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
+  const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
+  const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
 
   React.useEffect(() => {
-    api.get<any>('/faculty-members')
-      .then(res => {
-        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        if (Array.isArray(teachers) && teachers.length > 0) {
-          const matched = teachers.find((t: any) =>
-            (user?.id && (t.id === user.id || t._id === user.id)) ||
-            (user?.email && t.email === user.email) ||
-            (user?.phone && t.phone === user.phone) ||
-            (user?.name && t.name && (
-              t.name.toLowerCase() === user.name.toLowerCase() ||
-              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
-              user.name.toLowerCase().includes(t.name.toLowerCase())
-            ))
-          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
-
-          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
-            const classes = matched.assignedClasses
-              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-              .filter(Boolean);
-            if (classes.length > 0) {
-              setDynamicClasses(classes);
-            }
-          }
-        }
-      })
-      .catch(() => {});
-  }, [user]);
+    if (user) {
+      fetchAssignedClassesForTeacher(user);
+    }
+  }, [user, fetchAssignedClassesForTeacher]);
 
   const teacherUser = user as any;
   const teacherClasses = React.useMemo(() => {
-    if (dynamicClasses.length > 0) return dynamicClasses;
+    if (teacherAssignedClasses.length > 0) return teacherAssignedClasses;
 
     let rawList: any[] = [];
     if (Array.isArray(teacherUser?.assignedClasses)) {
@@ -99,7 +77,7 @@ export const TeacherLayout: React.FC = () => {
       .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
     const unique = Array.from(new Set(fromStudents)).filter(Boolean);
     return unique;
-  }, [dynamicClasses, teacherUser, students, user]);
+  }, [teacherAssignedClasses, teacherUser, students, user]);
 
   const teacherStudents = students.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
@@ -111,7 +89,7 @@ export const TeacherLayout: React.FC = () => {
     { label: 'Home', path: '/teacher/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Students', path: '/teacher/students', icon: <Users className="w-5 h-5" /> },
     { label: 'Attendance', path: '/teacher/attendance', icon: <CalendarCheck className="w-5 h-5" /> },
-    { label: 'Quran', path: '/teacher/quran', icon: <BookOpen className="w-5 h-5" /> },
+    { label: 'Hifz', path: '/teacher/quran', icon: <BookOpen className="w-5 h-5" /> },
   ];
 
   // Desktop & Drawer full navigation items
@@ -120,7 +98,7 @@ export const TeacherLayout: React.FC = () => {
     { label: 'My Students', path: '/teacher/students', icon: <Users className="w-4 h-4" /> },
     { label: 'Mark Attendance', path: '/teacher/attendance', icon: <CalendarCheck className="w-4 h-4" /> },
     { label: 'Academic Assessments', path: '/teacher/assessments', icon: <GraduationCap className="w-4 h-4" /> },
-    { label: 'Quran & Hifz Tracker', path: '/teacher/quran', icon: <BookOpen className="w-4 h-4" /> },
+    { label: 'Hifz Tracker', path: '/teacher/quran', icon: <BookOpen className="w-4 h-4" /> },
     { label: 'Practical Score & Awards', path: '/teacher/akhlaq-remarks', icon: <HeartHandshake className="w-4 h-4" /> }
   ];
 
@@ -445,11 +423,15 @@ export const TeacherLayout: React.FC = () => {
       <UpdateTimetableModal
         isOpen={isTimetableModalOpen}
         onClose={() => setIsTimetableModalOpen(false)}
+        assignedClasses={teacherClasses}
+        initialClass={teacherClasses[0]}
       />
 
       <UpdateSubjectsModal
         isOpen={isSubjectsModalOpen}
         onClose={() => setIsSubjectsModalOpen(false)}
+        assignedClasses={teacherClasses}
+        initialClass={teacherClasses[0]}
       />
 
       <UpdatePracticalScoreModal
@@ -461,5 +443,4 @@ export const TeacherLayout: React.FC = () => {
     </div>
   );
 };
-
 

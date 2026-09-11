@@ -10,10 +10,9 @@ import { StatCard } from '../../components/common/StatCard';
 import { UpdateTimetableModal } from './UpdateTimetableModal';
 import { UpdateSubjectsModal } from './UpdateSubjectsModal';
 import { UpdatePracticalScoreModal } from './UpdatePracticalScoreModal';
-import { timetableService } from '../../services/timetableService';
-import { subjectService } from '../../services/subjectService';
+import { useClassStore, useSubjectStore, useTimetableStore } from '../../stores';
+import { muallimService } from '../../services/muallimService';
 import { MuallimUser, TimetablePeriod, MadrasaDay } from '../../types';
-import { api } from '../../lib/axios';
 import {
   Users,
   CalendarCheck,
@@ -39,70 +38,30 @@ import { formatDate } from '../../utils/formatters';
 
 export const TeacherDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { students, attendance, quranRecords, remarks, markAttendance, batchMarkAttendance, getStudentSummary } = useData();
+  const { students, attendance, quranRecords, remarks, achievements, markAttendance, batchMarkAttendance } = useData();
 
-  // Assigned classes for this Muallim
-  const [teacherClasses, setTeacherClasses] = useState<string[]>([]);
+  // Zustand stores
+  const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
+  const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
+
+  const classSchedule = useTimetableStore((s) => s.classSchedule);
+  const fetchSchedule = useTimetableStore((s) => s.fetchSchedule);
+
+  const subjects = useSubjectStore((s) => s.subjects);
+  const fetchSubjects = useSubjectStore((s) => s.fetchSubjects);
+
   const [dashboardClass, setDashboardClass] = useState<string>('5');
+  const [selectedDashboardDay, setSelectedDashboardDay] = useState<MadrasaDay>('Sunday');
+  const [awardsGivenCount, setAwardsGivenCount] = useState<number | null>(null);
 
   // Modal states for Timetable, Subjects & Practical Score
   const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
   const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
   const [isPracticalScoreModalOpen, setIsPracticalScoreModalOpen] = useState(false);
 
-  // Live schedule for timetable widget
-  const [selectedDashboardDay, setSelectedDashboardDay] = useState<MadrasaDay>('Sunday');
-  const [todaySchedule, setTodaySchedule] = useState<TimetablePeriod[]>([]);
-  const [activeSubjectsCount, setActiveSubjectsCount] = useState(7);
-
-  // Determine assigned classes dynamically from live MongoDB database
-  useEffect(() => {
-    // 1. Fetch live faculty data from backend
-    api.get<any>('/faculty-members')
-      .then(res => {
-        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        if (Array.isArray(teachers) && teachers.length > 0) {
-          const matched = teachers.find((t: any) =>
-            (user?.id && (t.id === user.id || t._id === user.id)) ||
-            (user?.email && t.email === user.email) ||
-            (user?.phone && t.phone === user.phone) ||
-            (user?.name && t.name && (
-              t.name.toLowerCase() === user.name.toLowerCase() ||
-              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
-              user.name.toLowerCase().includes(t.name.toLowerCase())
-            ))
-          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
-
-          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
-            const classes = matched.assignedClasses
-              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-              .filter(Boolean);
-
-            if (classes.length > 0) {
-              setTeacherClasses(classes);
-              setDashboardClass(classes[0]);
-
-              // Update local auth user cache
-              const stored = localStorage.getItem('tharbiyah_auth_user');
-              if (stored) {
-                try {
-                  const parsed = JSON.parse(stored);
-                  parsed.assignedClasses = classes;
-                  parsed.name = matched.name || parsed.name;
-                  parsed.id = matched.id || parsed.id;
-                  localStorage.setItem('tharbiyah_auth_user', JSON.stringify(parsed));
-                } catch {}
-              }
-              return;
-            }
-          }
-        }
-      })
-      .catch((err) => {
-        console.warn("Could not query /faculty-members", err);
-      });
-
-    // 2. Fallback to user state
+  // Compute teacher classes with fallback to user object
+  const teacherClasses = useMemo(() => {
+    if (teacherAssignedClasses.length > 0) return teacherAssignedClasses;
     const teacherUser = user as any;
     let rawList: any[] = [];
     if (Array.isArray(teacherUser?.assignedClasses)) {
@@ -117,31 +76,62 @@ export const TeacherDashboard: React.FC = () => {
     } else if (teacherUser?.assignedClass) {
       rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
     }
-
     const userClasses = rawList
-      .map(c => String(c).replace(/^Class\s*/i, '').trim())
+      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
       .filter(Boolean);
-
-    if (userClasses.length > 0) {
-      setTeacherClasses(userClasses);
-      setDashboardClass(userClasses[0]);
-    }
-  }, [user]);
-
-  const loadTimetableAndSubjects = () => {
-    const schedule = timetableService.getDaySchedule(dashboardClass, selectedDashboardDay);
-    setTodaySchedule(schedule);
-    subjectService.fetchFromApi().then((list) => {
-      setActiveSubjectsCount(list.length);
-    }).catch(() => {
-      const subjects = subjectService.getAll();
-      setActiveSubjectsCount(subjects.length);
-    });
-  };
+    return userClasses.length > 0 ? userClasses : ['5'];
+  }, [teacherAssignedClasses, user]);
 
   useEffect(() => {
-    loadTimetableAndSubjects();
-  }, [dashboardClass, selectedDashboardDay]);
+    if (user) {
+      fetchAssignedClassesForTeacher(user);
+    }
+  }, [user, fetchAssignedClassesForTeacher]);
+
+  useEffect(() => {
+    if (teacherClasses.length > 0 && !teacherClasses.includes(dashboardClass)) {
+      setDashboardClass(teacherClasses[0]);
+    }
+  }, [teacherClasses, dashboardClass]);
+
+  useEffect(() => {
+    fetchSchedule(dashboardClass);
+    fetchSubjects(dashboardClass);
+  }, [dashboardClass, fetchSchedule, fetchSubjects]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAwardsGivenCount = async () => {
+      if (!user?.id) {
+        setAwardsGivenCount(null);
+        return;
+      }
+
+      try {
+        const stats = await muallimService.getDashboard();
+        if (isMounted) {
+          setAwardsGivenCount(
+            typeof stats?.awardsGivenCount === 'number' ? stats.awardsGivenCount : null
+          );
+        }
+      } catch (err) {
+        console.error('Failed to load Muallim award badge count:', err);
+        if (isMounted) {
+          setAwardsGivenCount(null);
+        }
+      }
+    };
+
+    loadAwardsGivenCount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, achievements.length]);
+
+  const todaySchedule = classSchedule[selectedDashboardDay] || [];
+  const activeSubjectsCount = subjects.length;
 
   // Filter students assigned ONLY to this teacher's assigned classes
   const teacherStudents = useMemo(() => {
@@ -168,10 +158,6 @@ export const TeacherDashboard: React.FC = () => {
   const presentTodayCount = todayAttendance.filter(a =>
     a.status === 'PRESENT' && teacherStudents.some(s => s.id === a.studentId)
   ).length;
-  const excellentProgressCount = teacherStudents.filter(s => {
-    const summ = getStudentSummary(s.id);
-    return (summ?.overallProgress || 0) >= 80;
-  }).length;
 
   // Quick mark all present for today
   const handleMarkAllPresent = async () => {
@@ -181,7 +167,9 @@ export const TeacherDashboard: React.FC = () => {
       date: todayStr,
       status: 'PRESENT' as const
     }));
-    await batchMarkAttendance(updates, user?.id || 'teacher-1');
+    const targetClassId = dashboardClass || teacherClasses[0];
+    if (!user?.id || !targetClassId) return;
+    await batchMarkAttendance(updates, user.id, targetClassId);
     setMarkingSuccess(true);
     setTimeout(() => setMarkingSuccess(false), 3000);
   };
@@ -242,8 +230,8 @@ export const TeacherDashboard: React.FC = () => {
         />
         <StatCard
           label="Excellent Progress"
-          value={excellentProgressCount}
-          sublabel="Distinction in Sabaq/Hifz"
+          value={awardsGivenCount ?? '—'}
+          sublabel="Award badges given"
           icon={<Award className="w-5 h-5" />}
           variant="gold"
         />
@@ -325,7 +313,7 @@ export const TeacherDashboard: React.FC = () => {
 
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => markAttendance(student.id, todayStr, 'PRESENT', user?.id || 'teacher-1')}
+                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'PRESENT', user.id, undefined, student.class)}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'PRESENT'
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-white text-[#667085] hover:bg-emerald-100'
@@ -335,17 +323,17 @@ export const TeacherDashboard: React.FC = () => {
                       P
                     </button>
                     <button
-                      onClick={() => markAttendance(student.id, todayStr, 'LATE', user?.id || 'teacher-1')}
-                      className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'LATE'
+                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'LEAVE', user.id, undefined, student.class)}
+                      className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'LEAVE'
                         ? 'bg-amber-500 text-white shadow-xs'
                         : 'bg-white text-[#667085] hover:bg-amber-100'
                         }`}
-                      title="Late"
+                      title="Leave"
                     >
                       L
                     </button>
                     <button
-                      onClick={() => markAttendance(student.id, todayStr, 'ABSENT', user?.id || 'teacher-1')}
+                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'ABSENT', user.id, undefined, student.class)}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'ABSENT'
                         ? 'bg-rose-600 text-white shadow-xs'
                         : 'bg-white text-[#667085] hover:bg-rose-100'
@@ -353,6 +341,16 @@ export const TeacherDashboard: React.FC = () => {
                       title="Absent"
                     >
                       A
+                    </button>
+                    <button
+                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'HOLIDAY', user.id, undefined, student.class)}
+                      className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'HOLIDAY'
+                        ? 'bg-slate-600 text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-slate-100'
+                        }`}
+                      title="Holiday"
+                    >
+                      H
                     </button>
                   </div>
                 </div>
@@ -532,14 +530,22 @@ export const TeacherDashboard: React.FC = () => {
         onClose={() => setIsTimetableModalOpen(false)}
         initialClass={dashboardClass}
         assignedClasses={teacherClasses}
-        onUpdated={loadTimetableAndSubjects}
+        onUpdated={() => {
+          fetchSchedule(dashboardClass);
+          fetchSubjects(dashboardClass);
+        }}
       />
 
       {/* Subjects Modal */}
       <UpdateSubjectsModal
         isOpen={isSubjectsModalOpen}
         onClose={() => setIsSubjectsModalOpen(false)}
-        onUpdated={loadTimetableAndSubjects}
+        initialClass={dashboardClass}
+        assignedClasses={teacherClasses}
+        onUpdated={() => {
+          fetchSchedule(dashboardClass);
+          fetchSubjects(dashboardClass);
+        }}
       />
 
       {/* Practical Score Modal */}
@@ -550,5 +556,3 @@ export const TeacherDashboard: React.FC = () => {
     </div>
   );
 };
-
-
