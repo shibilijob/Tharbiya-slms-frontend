@@ -2,6 +2,7 @@ import type { User, UserRole, ParentUser, MuallimUser, SadhrMuallimUser } from '
 import { CURRENT_MADRASA_NAME } from '../data/mockData';
 import { authClient } from '../lib/auth-client';
 import { api } from '../lib/axios';
+import { clearAppStorage } from '../utils/storageCleanup';
 
 const AUTH_USER_KEY = 'tharbiyah_auth_user';
 
@@ -15,7 +16,6 @@ export const mapBetterAuthUserToAppUser = (authUser: any, targetRole?: UserRole)
   const role: UserRole = normalizeRole(authUser.role || targetRole);
 
   let assignedClasses: string[] = [];
-  let assignedSubjects: string[] = [];
   let studentIds: string[] = [];
 
   if (Array.isArray(authUser.assignedClasses)) {
@@ -37,18 +37,6 @@ export const mapBetterAuthUserToAppUser = (authUser: any, targetRole?: UserRole)
     }
   }
 
-  if (Array.isArray(authUser.assignedSubjects)) {
-    assignedSubjects = authUser.assignedSubjects;
-  } else if (typeof authUser.assignedSubjects === 'string') {
-    try {
-      assignedSubjects = authUser.assignedSubjects.startsWith('[')
-        ? JSON.parse(authUser.assignedSubjects)
-        : [authUser.assignedSubjects.trim()];
-    } catch {
-      assignedSubjects = authUser.assignedSubjects.trim() ? [authUser.assignedSubjects.trim()] : [];
-    }
-  }
-
   if (Array.isArray(authUser.studentIds)) {
     studentIds = authUser.studentIds;
   } else if (typeof authUser.studentIds === 'string') {
@@ -63,21 +51,21 @@ export const mapBetterAuthUserToAppUser = (authUser: any, targetRole?: UserRole)
 
   if (role === 'PARENT') {
     const parent: ParentUser = {
-      id: authUser.id || 'parent-1',
+      id: authUser.id || authUser._id || '',
       name: authUser.name,
       role: 'PARENT',
       email: authUser.email,
       phone: authUser.phone || authUser.username,
       avatar: authUser.image || authUser.avatar || '',
       madrasaName: authUser.madrasaName || CURRENT_MADRASA_NAME,
-      studentIds: studentIds.length > 0 ? studentIds : ['no students'],
+      studentIds,
     };
     return parent;
   }
 
   if (role === 'MUALLIM') {
     const muallim: MuallimUser = {
-      id: authUser.id || 'muallim-1',
+      id: authUser.id || authUser._id || '',
       name: authUser.name || 'Usthad',
       role: 'MUALLIM',
       email: authUser.email,
@@ -85,23 +73,21 @@ export const mapBetterAuthUserToAppUser = (authUser: any, targetRole?: UserRole)
       avatar: authUser.image || authUser.avatar || '',
       madrasaName: authUser.madrasaName || CURRENT_MADRASA_NAME,
       assignedClasses,
-      assignedSubjects: assignedSubjects.length > 0 ? assignedSubjects : ['Quran'],
       designation: authUser.designation || 'Usthad & Class Mentor',
     };
     return muallim;
   }
 
   const sadhr: SadhrMuallimUser = {
-    id: authUser.id || 'sadhr-1',
-    name: authUser.name || 'Usthad Shihabudheen Saadi',
+    id: authUser.id || authUser._id || '',
+    name: authUser.name || 'Usthad',
     role: 'SADHR_MUALLIM',
     email: authUser.email,
     phone: authUser.phone || authUser.username,
     avatar: authUser.image || authUser.avatar || '',
     madrasaName: authUser.madrasaName || CURRENT_MADRASA_NAME,
     designation: authUser.designation || 'Sadhr Muallim (Sadhr Mudarris)',
-    assignedClasses: assignedClasses.length > 0 ? assignedClasses : ['7', '6'],
-    assignedSubjects: assignedSubjects.length > 0 ? assignedSubjects : ['Fiqh', 'Quran', 'Islamic Studies'],
+    assignedClasses,
   };
   return sadhr;
 };
@@ -198,42 +184,11 @@ export const authService = {
       console.warn("Failed to fetch faculty for switchRole", err);
     }
 
-    const user: User = role === 'SADHR_MUALLIM'
-      ? {
-        id: 'sadhr-1',
-        name: 'Usthad Shihabudheen Saadi',
-        role: 'SADHR_MUALLIM',
-        email: 'shihab@yopmail.com',
-        phone: '0000000001',
-        designation: 'Sadhr Muallim (Sadhr Mudarris)',
-        assignedClasses: ['1', '8', '12'],
-        assignedSubjects: ['Fiqh', 'Quran'],
-        madrasaName: CURRENT_MADRASA_NAME
-      } as SadhrMuallimUser
-      : role === 'MUALLIM'
-        ? {
-          id: 'muallim-1',
-          name: 'Usthad Shibili Ahsani',
-          role: 'MUALLIM',
-          email: 'shibili@yopmail.com',
-          phone: '0000000003',
-          designation: 'Usthad & Class Mentor',
-          assignedClasses: ['4', '6', '10'],
-          assignedSubjects: ['Quran', 'Hifz', 'Tajweed'],
-          madrasaName: CURRENT_MADRASA_NAME
-        } as MuallimUser
-        : {
-          id: 'parent-1',
-          name: 'Parent User',
-          role: 'PARENT',
-          email: 'parent@gmail.com',
-          phone: '9847123456',
-          studentIds: [],
-          madrasaName: CURRENT_MADRASA_NAME
-        } as ParentUser;
+    if (role === 'PARENT') {
+      throw new Error('Parent role switching requires an authenticated parent login.');
+    }
 
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-    return user;
+    throw new Error('Role switching requires an authenticated user from the database.');
   },
 
   async loginWithGoogle(role: UserRole): Promise<void> {
@@ -259,11 +214,9 @@ export const authService = {
       await authClient.signOut();
     } catch (e) {
       console.warn("Better Auth sign out:", e);
+    } finally {
+      clearAppStorage();
     }
-    localStorage.removeItem(AUTH_USER_KEY);
-    localStorage.removeItem('tharbiyah_auth_token');
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('pending_oauth_role');
   },
 
   async verifyMuallim(email: string): Promise<{

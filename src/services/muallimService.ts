@@ -5,23 +5,9 @@ export interface MarkAttendancePayload {
   date?: string;
   records: Array<{
     studentId: string;
-    status: "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
+    status: "PRESENT" | "ABSENT" | "LEAVE" | "HOLIDAY";
     remark?: string;
   }>;
-}
-
-export interface RecordHifzPayload {
-  studentId: string;
-  classId?: string;
-  sessionType: "SABAQ" | "SABQI" | "MANZIL" | "REVISION";
-  surahNumber: number;
-  surahName: string;
-  fromAyah: number;
-  toAyah: number;
-  rating: 1 | 2 | 3 | 4 | 5;
-  mistakesCount?: number;
-  remarks?: string;
-  date?: string;
 }
 
 export interface RecordPracticalPayload {
@@ -111,11 +97,6 @@ export const muallimService = {
   /**
    * Quran / Hifz Progress Operations
    */
-  async recordHifzLog(data: RecordHifzPayload) {
-    const res = await api.post("/muallim/hifz", data);
-    return res.data;
-  },
-
   async getStudentHifzHistory(studentId: string, limit?: number) {
     const params = limit ? { limit } : {};
     const res = await api.get(`/muallim/hifz/student/${studentId}`, { params });

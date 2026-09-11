@@ -14,7 +14,7 @@ import { formatDate } from '../../utils/formatters';
 export const AnnouncementsManagerView: React.FC = () => {
   const { user } = useAuth();
   const { announcements, addAnnouncement, deleteAnnouncement } = useData();
-  const { showToast, pushNotification } = useNotifications();
+  const { showToast } = useNotifications();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -33,19 +33,11 @@ export const AnnouncementsManagerView: React.FC = () => {
         title,
         content,
         targetAudience,
-        authorName: user?.name || "Usthad Shihabudheen Saadi (Sadhr Muallim)",
+        authorName: user?.name || "Sadhr Muallim",
         important
       });
 
       showToast(`✓ Announcement published to ${targetAudience}.`);
-
-      // Push notification broadcast
-      await pushNotification({
-        userId: "parent-1",
-        title: `Notice: ${title}`,
-        message: content.slice(0, 80) + '...',
-        category: "ANNOUNCEMENT"
-      });
 
       setTitle('');
       setContent('');

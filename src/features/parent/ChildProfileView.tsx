@@ -7,7 +7,6 @@ import { ProgressGauge } from '../../components/charts/ProgressGauge';
 import {
   User,
   Calendar,
-  Heart,
   BookOpen,
   GraduationCap,
   Sparkles,
@@ -16,15 +15,14 @@ import {
 import { formatDate } from '../../utils/formatters';
 
 export const ChildProfileView: React.FC = () => {
-  const { selectedChildId, getStudentSummary, assessments, quranRecords, akhlaqRecords, achievements } = useData();
+  const { selectedChildId, getStudentSummary, assessments, quranRecords, achievements } = useData();
 
   const summary = getStudentSummary(selectedChildId);
   if (!summary) return null;
 
-  const { student, overallProgress, quranProgress, studiesProgress, attendancePercentage, akhlaqScore } = summary;
+  const { student, overallProgress, quranProgress, studiesProgress } = summary;
   const childAssessments = assessments.filter(a => a.studentId === student.id);
   const quranRecord = quranRecords.find(q => q.studentId === student.id);
-  const akhlaqRecord = akhlaqRecords.find(a => a.studentId === student.id);
   const childAchievements = achievements.filter(a => a.studentId === student.id);
 
   return (
@@ -84,15 +82,15 @@ export const ChildProfileView: React.FC = () => {
           <div className="space-y-3 text-xs sm:text-sm">
             <div className="flex justify-between py-1.5 border-b border-[#FAF8F2]">
               <span className="text-[#667085]">Current Lesson:</span>
-              <span className="font-bold text-[#1F2933]">{quranRecord?.sabaqLesson || 'Al-Mulk (1-15)'}</span>
+              <span className="font-bold text-[#1F2933]">{quranRecord?.sabaqLesson || 'Not recorded'}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#FAF8F2]">
               <span className="text-[#667085]">Hifz Surahs Completed:</span>
-              <span className="font-bold text-[#0F6B50]">{quranRecord?.hifzSurahsCount || 28} Surahs</span>
+              <span className="font-bold text-[#0F6B50]">{quranRecord?.hifzSurahsCount ?? 0} Surahs</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#FAF8F2]">
               <span className="text-[#667085]">Tajweed Pronunciation Level:</span>
-              <span className="font-bold text-[#1F2933]">{quranRecord?.tajweedLevel || 'Proficient'}</span>
+              <span className="font-bold text-[#1F2933]">{quranRecord?.tajweedLevel || 'Not recorded'}</span>
             </div>
           </div>
         </Card>

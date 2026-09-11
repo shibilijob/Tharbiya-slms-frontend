@@ -17,10 +17,11 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Filter
+  Calendar
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
-import { api } from '../../lib/axios';
+import { useClassStore } from '../../stores';
+import { useAttendanceStore } from '../../stores/attendanceStore';
 
 export const AttendanceBatchMarker: React.FC = () => {
   const { user } = useAuth();
@@ -31,41 +32,20 @@ export const AttendanceBatchMarker: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSaving, setIsSaving] = useState(false);
-  const [dynamicClasses, setDynamicClasses] = useState<string[]>([]);
+
+  const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
+  const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
 
   React.useEffect(() => {
-    api.get<any>('/faculty-members')
-      .then(res => {
-        const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        if (Array.isArray(teachers) && teachers.length > 0) {
-          const matched = teachers.find((t: any) =>
-            (user?.id && (t.id === user.id || t._id === user.id)) ||
-            (user?.email && t.email === user.email) ||
-            (user?.phone && t.phone === user.phone) ||
-            (user?.name && t.name && (
-              t.name.toLowerCase() === user.name.toLowerCase() ||
-              t.name.toLowerCase().includes(user.name.toLowerCase()) ||
-              user.name.toLowerCase().includes(t.name.toLowerCase())
-            ))
-          ) || teachers.find((t: any) => t.role === 'MUALLIM') || teachers[0];
-
-          if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
-            const classes = matched.assignedClasses
-              .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-              .filter(Boolean);
-            if (classes.length > 0) {
-              setDynamicClasses(classes);
-            }
-          }
-        }
-      })
-      .catch(() => {});
-  }, [user]);
+    if (user) {
+      fetchAssignedClassesForTeacher(user);
+    }
+  }, [user, fetchAssignedClassesForTeacher]);
 
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
   const teacherClasses = React.useMemo(() => {
-    if (dynamicClasses.length > 0) return dynamicClasses;
+    if (teacherAssignedClasses.length > 0) return teacherAssignedClasses;
 
     let rawList: any[] = [];
     if (Array.isArray(teacherUser?.assignedClasses)) {
@@ -92,7 +72,7 @@ export const AttendanceBatchMarker: React.FC = () => {
       .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
     const unique = Array.from(new Set(fromStudents)).filter(Boolean);
     return unique.length > 0 ? unique : ['4'];
-  }, [dynamicClasses, teacherUser, students, user]);
+  }, [teacherAssignedClasses, teacherUser, students, user]);
 
   // Filter students assigned to teacher's assigned classes
   const teacherStudents = students.filter(s => {
@@ -110,6 +90,17 @@ export const AttendanceBatchMarker: React.FC = () => {
                           (s.malayalamName && s.malayalamName.includes(searchQuery));
     return matchesClass && matchesSearch;
   });
+
+  // Fetch confirmed attendance from MongoDB when date or class changes
+  useEffect(() => {
+    const classParam =
+      selectedClass !== 'ALL'
+        ? selectedClass
+        : teacherClasses.length === 1
+        ? teacherClasses[0]
+        : undefined;
+    useAttendanceStore.getState().fetchByDateAndClass(selectedDate, classParam);
+  }, [selectedDate, selectedClass, teacherClasses]);
 
   const [attendanceState, setAttendanceState] = useState<Record<string, { status: AttendanceStatus; remarks: string }>>(() => {
     const initial: Record<string, { status: AttendanceStatus; remarks: string }> = {};
@@ -169,7 +160,8 @@ export const AttendanceBatchMarker: React.FC = () => {
       });
       return updated;
     });
-    showToast(`Marked ${filteredStudents.length} students as ${status}`);
+    const label = status === 'PRESENT' ? 'Present' : status === 'LEAVE' ? 'Leave' : status === 'HOLIDAY' ? 'Holiday' : 'Absent';
+    showToast(`Marked ${filteredStudents.length} students as ${label}`);
   };
 
   const handleSaveAttendance = async () => {
@@ -183,11 +175,24 @@ export const AttendanceBatchMarker: React.FC = () => {
         remarks: attendanceState[s.id]?.remarks || undefined
       }));
 
-      await batchMarkAttendance(updates, user?.id || 'teacher-1');
+      const targetClassId =
+        selectedClass !== 'ALL'
+          ? selectedClass
+          : teacherClasses.length === 1
+          ? teacherClasses[0]
+          : undefined;
+
+      if (!user?.id) {
+        throw new Error('Authenticated Muallim ID is required to save attendance');
+      }
+
+      await batchMarkAttendance(updates, user.id, targetClassId);
       const classLabel = selectedClass === 'ALL' ? teacherClasses.map(c => `Class ${c}`).join(' & ') : `Class ${selectedClass}`;
       showToast(`✓ Attendance register for ${classLabel} (${formatDate(selectedDate)}) saved successfully!`);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to save attendance", e);
+      const msg = e.response?.data?.message || e.message || "Failed to save attendance to server";
+      showToast(`✕ ${msg}`);
     } finally {
       setIsSaving(false);
     }
@@ -195,7 +200,8 @@ export const AttendanceBatchMarker: React.FC = () => {
 
   const presentCount = filteredStudents.filter(s => (attendanceState[s.id]?.status || 'PRESENT') === 'PRESENT').length;
   const absentCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'ABSENT').length;
-  const lateCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'LATE').length;
+  const leaveCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'LEAVE').length;
+  const holidayCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'HOLIDAY').length;
 
   return (
     <div className="space-y-6">
@@ -277,23 +283,28 @@ export const AttendanceBatchMarker: React.FC = () => {
             <span>Present: {presentCount}</span>
           </div>
 
+          <div className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-amber-600" />
+            <span>Leave: {leaveCount}</span>
+          </div>
+
           <div className="bg-rose-50 text-rose-800 border border-rose-200 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5">
             <XCircle className="w-4 h-4 text-rose-600" />
             <span>Absent: {absentCount}</span>
           </div>
 
-          <div className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-amber-600" />
-            <span>Late: {lateCount}</span>
+          <div className="bg-slate-100 text-slate-800 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-slate-600" />
+            <span>Holiday: {holidayCount}</span>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="secondary" onClick={() => handleMarkAll('PRESENT')}>
-            Mark All Present (P)
+            Mark All Present
           </Button>
           <Button size="sm" variant="outline" onClick={() => handleMarkAll('ABSENT')}>
-            Reset to Absent (A)
+            Reset to Absent
           </Button>
         </div>
 
@@ -352,24 +363,12 @@ export const AttendanceBatchMarker: React.FC = () => {
                       type="button"
                       onClick={() => handleStatusChange(student.id, 'PRESENT')}
                       className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                        current.status === 'PRESENT'
+                        current.status === 'PRESENT' || !current.status
                           ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30'
                           : 'bg-[#FAF8F2] text-[#667085] hover:bg-emerald-50'
                       }`}
                     >
-                      Present (P)
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(student.id, 'LATE')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                        current.status === 'LATE'
-                          ? 'bg-amber-500 text-white shadow-sm ring-2 ring-amber-500/30'
-                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-amber-50'
-                      }`}
-                    >
-                      Late (L)
+                      Present
                     </button>
 
                     <button
@@ -381,7 +380,31 @@ export const AttendanceBatchMarker: React.FC = () => {
                           : 'bg-[#FAF8F2] text-[#667085] hover:bg-rose-50'
                       }`}
                     >
-                      Absent (A)
+                      Absent
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(student.id, 'LEAVE')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                        current.status === 'LEAVE'
+                          ? 'bg-amber-500 text-white shadow-sm ring-2 ring-amber-500/30'
+                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-amber-50'
+                      }`}
+                    >
+                      Leave
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(student.id, 'HOLIDAY')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                        current.status === 'HOLIDAY'
+                          ? 'bg-slate-600 text-white shadow-sm ring-2 ring-slate-600/30'
+                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-slate-100'
+                      }`}
+                    >
+                      Holiday
                     </button>
                   </div>
                 </div>
@@ -393,4 +416,3 @@ export const AttendanceBatchMarker: React.FC = () => {
     </div>
   );
 };
-

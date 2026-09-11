@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useData } from '../../context/DataContext';
 import { Card } from '../../components/common/Card';
-import { Badge } from '../../components/common/Badge';
 import { practicalCriteriaService } from '../../services/practicalCriteriaService';
 import { AkhlaqCategoryMeta } from '../../data/madrasaCurriculum';
-import { AkhlaqCategory, AkhlaqLevel } from '../../types';
+import { AkhlaqLevel } from '../../types';
 import {
   HeartHandshake,
   ShieldCheck,
@@ -84,7 +83,7 @@ export const AkhlaqView: React.FC = () => {
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-[#DDEDE5]">Overall Practical Score</p>
-              <p className="text-2xl font-black text-white">{akhlaqScore || 90}%</p>
+              <p className="text-2xl font-black text-white">{akhlaqScore ?? 0}%</p>
             </div>
           </div>
         </div>

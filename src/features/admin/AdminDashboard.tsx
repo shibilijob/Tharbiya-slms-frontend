@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useClassStore } from '../../stores';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
@@ -24,15 +25,39 @@ import { formatDate } from '../../utils/formatters';
 
 export const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { students } = useData();
+  const { students, attendance } = useData();
+  const classesList = useClassStore((s) => s.classes);
+  const fetchClasses = useClassStore((s) => s.fetchClasses);
+
+  useEffect(() => {
+    fetchClasses();
+  }, [fetchClasses]);
 
   const totalStudents = students.length;
   const uniqueTeachers = new Set(students.map(s => s.assignedTeacherId).filter(Boolean));
   const totalTeachers = uniqueTeachers.size;
   const uniqueParents = new Set(students.map(s => s.parentId).filter(Boolean));
   const totalParents = uniqueParents.size;
-  const uniqueClasses = new Set(students.map(s => s.class).filter(Boolean));
-  const totalClasses = uniqueClasses.size;
+  const totalClasses = classesList.length;
+
+  const getClassAttendancePercentage = (className: string) => {
+    const classNumber = className.replace(/^Class\s*/i, '').trim();
+    const classStudentIds = new Set(
+      students
+        .filter((student) => student.class === classNumber || student.class === className)
+        .map((student) => student.id)
+    );
+    const classAttendance = attendance.filter(
+      (record) => classStudentIds.has(record.studentId) && record.status !== 'HOLIDAY'
+    );
+
+    if (classAttendance.length === 0) {
+      return '—';
+    }
+
+    const presentCount = classAttendance.filter((record) => record.status === 'PRESENT').length;
+    return `${Math.round((presentCount / classAttendance.length) * 100)}%`;
+  };
 
   return (
     <div className="space-y-6">
@@ -50,7 +75,7 @@ export const AdminDashboard: React.FC = () => {
               ദാറുന്നജാത്ത് മദ്രസ മുണ്ടമ്പ്ര — സമഗ്ര ഭരണനിർവഹണം
             </p>
             <p className="text-xs text-[#DDEDE5]/80">
-              Welcome, <strong className="text-white">{user?.name || "Usthad Shihabudheen Saadi"}</strong>
+              Welcome, <strong className="text-white">{user?.name || "Sadhr Muallim"}</strong>
             </p>
           </div>
 
@@ -102,7 +127,7 @@ export const AdminDashboard: React.FC = () => {
         <StatCard
           label="Madrasa Classes"
           value={totalClasses}
-          sublabel="Class 1 to Class 7"
+          sublabel="Active madrasa classes"
           icon={<Layers className="w-5 h-5" />}
           variant="gold"
         />
@@ -122,17 +147,20 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="space-y-3">
-              {['1', '2', '3', '4', '5', '6', '7'].map(cNum => {
-                const count = students.filter(s => s.class === cNum || s.class === `Class ${cNum}`).length;
+              {classesList.map((cls) => {
+                const classNumber = cls.name.replace(/^Class\s*/i, '').trim();
+                const count = students.filter(
+                  (s) => s.class === classNumber || s.class === cls.name
+                ).length;
                 return (
-                  <div key={cNum} className="p-3.5 rounded-xl bg-[#FAF8F2] border border-[#E3EAE6] flex items-center justify-between">
+                  <div key={cls.id} className="p-3.5 rounded-xl bg-[#FAF8F2] border border-[#E3EAE6] flex items-center justify-between">
                     <div>
-                      <h4 className="text-xs font-bold text-[#1F2933]">Class {cNum}</h4>
+                      <h4 className="text-xs font-bold text-[#1F2933]">{cls.name}</h4>
                       <p className="text-[10px] text-[#667085]">{count} enrolled student{count === 1 ? '' : 's'}</p>
                     </div>
                     <div className="text-right">
                       <span className="text-xs font-bold text-emerald-800">
-                        {count > 0 ? '95%' : '—'}
+                        {count > 0 ? getClassAttendancePercentage(cls.name) : '—'}
                       </span>
                       <p className="text-[9px] text-[#667085] uppercase">Attendance</p>
                     </div>
@@ -202,3 +230,4 @@ export const AdminDashboard: React.FC = () => {
     </div>
   );
 };
+

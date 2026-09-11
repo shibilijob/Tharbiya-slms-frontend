@@ -10,7 +10,6 @@ export interface BetterAuthCustomUser {
   designation?: string;
   madrasaName?: string;
   assignedClasses?: string;
-  assignedSubjects?: string;
   studentIds?: string;
   avatar?: string;
   image?: string | null;

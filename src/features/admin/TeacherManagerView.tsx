@@ -9,9 +9,8 @@ import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog
 import { TeacherUser } from '../../types';
 import { useNotifications } from '../../context/NotificationContext';
 import { api } from '../../lib/axios';
+import { useClassStore } from '../../stores';
 import { Users, Plus, Edit2, Trash2, Phone, Mail, GraduationCap, Search, RefreshCw, Lock } from 'lucide-react';
-
-const ALL_CLASSES = ['1', '2', '3', '4', '5', '6', '7'];
 
 export const TeacherManagerView: React.FC = () => {
   const [teachersList, setTeachersList] = useState<TeacherUser[]>([]);
@@ -31,9 +30,24 @@ export const TeacherManagerView: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [designation, setDesignation] = useState('Muallim');
-  const [selectedClasses, setSelectedClasses] = useState<string[]>(['5']);
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
 
   const { showToast } = useNotifications();
+  const classesList = useClassStore((s) => s.classes);
+  const isClassLoading = useClassStore((s) => s.isLoading);
+  const fetchClasses = useClassStore((s) => s.fetchClasses);
+
+  const getClassValue = (className: string) => className.replace(/^Class\s*/i, '').trim();
+
+  const availableClasses = classesList.filter((cls) => {
+    const classValue = getClassValue(cls.name);
+    return (
+      cls.isActive !== false &&
+      (!cls.classTeacherId ||
+        cls.classTeacherId === editingTeacher?.id ||
+        selectedClasses.includes(classValue))
+    );
+  });
 
   const loadTeachers = async () => {
     setIsLoading(true);
@@ -50,7 +64,6 @@ export const TeacherManagerView: React.FC = () => {
             role: t.role || 'MUALLIM',
             designation: t.designation || (t.role === 'SADHR_MUALLIM' ? 'Sadhr Muallim' : 'Muallim'),
             assignedClasses: t.assignedClasses || [],
-            assignedSubjects: t.assignedSubjects || [],
             madrasaName: 'Darunnajath Mundambra',
           }))
         );
@@ -64,7 +77,10 @@ export const TeacherManagerView: React.FC = () => {
 
   useEffect(() => {
     loadTeachers();
-  }, []);
+    fetchClasses().catch((err: any) => {
+      showToast(err?.response?.data?.message || err?.message || 'Failed to load classes.');
+    });
+  }, [fetchClasses]);
 
   const handleOpenAdd = () => {
     setEditingTeacher(null);
@@ -73,7 +89,7 @@ export const TeacherManagerView: React.FC = () => {
     setEmail('');
     setPassword('muallim123');
     setDesignation('Muallim');
-    setSelectedClasses(['5']);
+    setSelectedClasses([]);
     setFormError(null);
     setIsModalOpen(true);
   };
@@ -85,7 +101,7 @@ export const TeacherManagerView: React.FC = () => {
     setEmail(t.email || '');
     setPassword('');
     setDesignation(t.designation.toLowerCase().includes('sadhr') ? 'Sadhr Muallim' : 'Muallim');
-    setSelectedClasses(t.assignedClasses.length > 0 ? t.assignedClasses : ['5']);
+    setSelectedClasses(t.assignedClasses || []);
     setFormError(null);
     setIsModalOpen(true);
   };
@@ -103,10 +119,11 @@ export const TeacherManagerView: React.FC = () => {
   };
 
   const handleSelectAllToggle = () => {
-    if (selectedClasses.length === ALL_CLASSES.length) {
-      setSelectedClasses(['5']);
+    const availableClassValues = availableClasses.map((cls) => getClassValue(cls.name)).filter(Boolean);
+    if (availableClassValues.every((classValue) => selectedClasses.includes(classValue))) {
+      setSelectedClasses([]);
     } else {
-      setSelectedClasses([...ALL_CLASSES]);
+      setSelectedClasses(availableClassValues);
     }
   };
 
@@ -135,7 +152,12 @@ export const TeacherManagerView: React.FC = () => {
       return;
     }
 
-    const classArray = selectedClasses.length > 0 ? selectedClasses : ['5'];
+    if (selectedClasses.length === 0) {
+      setFormError('Select at least one active, available class.');
+      return;
+    }
+
+    const classArray = selectedClasses;
     const isSadhr = designation.toLowerCase().includes('sadhr');
     const role = isSadhr ? 'SADHR_MUALLIM' : 'MUALLIM';
 
@@ -167,7 +189,6 @@ export const TeacherManagerView: React.FC = () => {
           designation: designation.trim(),
           role,
           assignedClasses: classArray,
-          assignedSubjects: [],
         };
 
         await api.post('/sadhr/muallims', payload);
@@ -387,18 +408,27 @@ export const TeacherManagerView: React.FC = () => {
                 onClick={handleSelectAllToggle}
                 className="text-[11px] font-bold text-[#0F6B50] hover:underline"
               >
-                {selectedClasses.length === ALL_CLASSES.length
+                {availableClasses.length > 0 && availableClasses.every((cls) => selectedClasses.includes(getClassValue(cls.name)))
                   ? 'Reset Selection'
-                  : 'Select All Classes (1-7)'}
+                  : 'Select All Available Classes'}
               </button>
             </div>
 
             <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-              {ALL_CLASSES.map((clsNum) => {
+              {isClassLoading ? (
+                <div className="col-span-full py-4 text-center text-xs text-[#667085]">
+                  Loading active classes...
+                </div>
+              ) : availableClasses.length === 0 ? (
+                <div className="col-span-full py-4 text-center text-xs text-[#667085]">
+                  No active unassigned classes are available.
+                </div>
+              ) : availableClasses.map((cls) => {
+                const clsNum = getClassValue(cls.name);
                 const isSelected = selectedClasses.includes(clsNum);
                 return (
                   <button
-                    key={clsNum}
+                    key={cls.id}
                     type="button"
                     onClick={() => toggleClass(clsNum)}
                     className={`py-2 px-2 rounded-xl text-xs font-extrabold border transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
@@ -421,8 +451,7 @@ export const TeacherManagerView: React.FC = () => {
               })}
             </div>
             <p className="text-[11px] text-[#667085] mt-2">
-              Tap each class to select or deselect. You can assign any combination of classes (e.g.
-              Class 1, 3, 5).
+              Tap each class to select or deselect. Classes already assigned to another Muallim are excluded.
             </p>
           </div>
 

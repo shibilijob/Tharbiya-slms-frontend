@@ -5,6 +5,8 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
 import { Avatar } from '../../components/common/Avatar';
+import { EmptyState } from '../../components/feedback/EmptyState';
+import { LoadingSpinner } from '../../components/feedback/LoadingSpinner';
 import {
   Phone,
   Mail,
@@ -18,13 +20,10 @@ import { useNavigate } from 'react-router-dom';
 
 export const ParentProfileView: React.FC = () => {
   const { user, logout } = useAuth();
-  const { students, selectedChildId, setSelectedChildId } = useData();
+  const { students, selectedChildId, setSelectedChildId, isLoading } = useData();
   const navigate = useNavigate();
 
-  const currentParentId = user?.id || 'parent-1';
-  const linkedChildren = students.filter(
-    s => s.parentId === currentParentId || s.parentId === 'parent-1' || s.id === 'student-1' || s.id === 'student-2'
-  );
+  const linkedChildren = students;
 
   return (
     <div className="space-y-6">
@@ -37,7 +36,7 @@ export const ParentProfileView: React.FC = () => {
           <div className="flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
               <h1 className="text-xl sm:text-2xl font-extrabold text-[#1F2933]">
-                {user?.name || "Ali Mundambra"}
+                {user?.name || "Parent"}
               </h1>
               <Badge variant="green">Registered Guardian</Badge>
             </div>
@@ -48,12 +47,14 @@ export const ParentProfileView: React.FC = () => {
             <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs text-[#667085]">
               <span className="flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-[#0F6B50]" />
-                {user?.phone || "+91 9847123456"}
+                {user?.phone || "Not available"}
               </span>
-              <span className="flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-[#0F6B50]" />
-                {user?.email || "ali.mundambra@gmail.com"}
-              </span>
+              {user?.email && (
+                <span className="flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-[#0F6B50]" />
+                  {user.email}
+                </span>
+              )}
             </div>
           </div>
 
@@ -85,8 +86,17 @@ export const ParentProfileView: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {linkedChildren.map(child => {
+        {isLoading ? (
+          <LoadingSpinner label="Loading children..." />
+        ) : linkedChildren.length === 0 ? (
+          <EmptyState
+            title="No enrolled children found."
+            description="This parent account does not currently have active linked student records."
+            icon={<Users className="w-7 h-7" />}
+          />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {linkedChildren.map(child => {
             const isSelected = child.id === selectedChildId;
             return (
               <div
@@ -118,7 +128,8 @@ export const ParentProfileView: React.FC = () => {
               </div>
             );
           })}
-        </div>
+          </div>
+        )}
       </Card>
 
       {/* Madrasa Contact & Guidelines */}
@@ -140,6 +151,3 @@ export const ParentProfileView: React.FC = () => {
     </div>
   );
 };
-
-
-

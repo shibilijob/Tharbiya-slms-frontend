@@ -1,5 +1,11 @@
-import { api } from "../lib/axios";
+import apiClient, { api } from "../lib/axios";
 import type { Achievement } from "../types";
+import type { HifzTarget } from "./hifzService";
+import { getBlobDownloadErrorMessage, saveBlobAsFile } from "../utils/downloadFile";
+
+const unwrapApiData = <T>(response: any): T => {
+  return response?.data !== undefined ? response.data : response;
+};
 
 export interface ParentProfile {
   id: string;
@@ -61,8 +67,8 @@ export interface ChildAttendanceResponse {
     totalDays: number;
     presentDays: number;
     absentDays: number;
-    lateDays: number;
-    excusedDays: number;
+    leaveDays: number;
+    holidayDays: number;
     percentage: number;
   };
   records: any[];
@@ -71,6 +77,12 @@ export interface ChildAttendanceResponse {
 export interface ChildHifzResponse {
   studentId: string;
   studentName: string;
+  student?: {
+    id: string;
+    name: string;
+    classId: string;
+    className: string;
+  };
   className: string;
   summary: {
     studentId: string;
@@ -80,6 +92,15 @@ export interface ChildHifzResponse {
     averageRating: number;
     recentLogs: any[];
   };
+  target: HifzTarget | null;
+  targets: Array<{
+    target: HifzTarget;
+    completedAyahs: number[];
+    progressPercentage: number;
+    status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+    logs: any[];
+  }>;
+  completedAyahs: number[];
   logs: any[];
 }
 
@@ -119,7 +140,7 @@ export const parentService = {
    */
   async getProfile(): Promise<ParentProfile> {
     const res = await api.get<ParentProfile>("/parent/profile");
-    return res.data;
+    return unwrapApiData<ParentProfile>(res);
   },
 
   /**
@@ -127,7 +148,7 @@ export const parentService = {
    */
   async getChildren(): Promise<ParentChildSummary[]> {
     const res = await api.get<ParentChildSummary[]>("/parent/children");
-    return res.data;
+    return unwrapApiData<ParentChildSummary[]>(res);
   },
 
   /**
@@ -135,7 +156,7 @@ export const parentService = {
    */
   async getChildProfile(studentId: string): Promise<ChildProfile> {
     const res = await api.get<ChildProfile>(`/parent/children/${studentId}`);
-    return res.data;
+    return unwrapApiData<ChildProfile>(res);
   },
 
   /**
@@ -154,7 +175,7 @@ export const parentService = {
       `/parent/children/${studentId}/attendance`,
       { params }
     );
-    return res.data;
+    return unwrapApiData<ChildAttendanceResponse>(res);
   },
 
   /**
@@ -165,7 +186,7 @@ export const parentService = {
       `/parent/children/${studentId}/hifz`,
       { params: { limit } }
     );
-    return res.data;
+    return unwrapApiData<ChildHifzResponse>(res);
   },
 
   /**
@@ -175,7 +196,7 @@ export const parentService = {
     const res = await api.get<ChildPracticalResponse>(
       `/parent/children/${studentId}/practical`
     );
-    return res.data;
+    return unwrapApiData<ChildPracticalResponse>(res);
   },
 
   /**
@@ -185,7 +206,7 @@ export const parentService = {
     const res = await api.get<ChildTimetableResponse>(
       `/parent/children/${studentId}/timetable`
     );
-    return res.data;
+    return unwrapApiData<ChildTimetableResponse>(res);
   },
 
   /**
@@ -195,7 +216,7 @@ export const parentService = {
     const res = await api.get<ChildAchievementsResponse>(
       `/parent/children/${studentId}/achievements`
     );
-    return res.data;
+    return unwrapApiData<ChildAchievementsResponse>(res);
   },
 
   /**
@@ -215,9 +236,29 @@ export const parentService = {
   /**
    * Register a new Parent in the database
    */
-  async createParent(data: { name: string; phone: string; email?: string; password?: string }): Promise<any> {
+  async createParent(data: { name: string; phone: string; email?: string }): Promise<any> {
     const res = await api.post<any>("/sadhr/parents", data);
     return res.data;
+  },
+
+  /**
+   * Download current active parent credential cards as a PDF.
+   */
+  async downloadAllParentDetails(): Promise<void> {
+    try {
+      const res = await apiClient.get("/sadhr/parents/export", {
+        responseType: "blob",
+        headers: {
+          Accept: "application/pdf",
+        },
+      });
+
+      saveBlobAsFile(res.data, "parent-details.pdf", "application/pdf");
+    } catch (error: any) {
+      throw new Error(
+        await getBlobDownloadErrorMessage(error, "Failed to download parent details PDF.")
+      );
+    }
   },
 
   /**

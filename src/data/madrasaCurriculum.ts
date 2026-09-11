@@ -8,6 +8,8 @@ export interface SubjectMeta {
   icon: string;
   color: string;
   description: string;
+  classId?: string;
+  className?: string;
 }
 
 export const MADRASA_SUBJECTS: SubjectMeta[] = [

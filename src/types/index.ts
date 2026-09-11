@@ -18,7 +18,6 @@ export interface ParentUser extends User {
 export interface MuallimUser extends User {
   role: 'MUALLIM';
   assignedClasses: string[]; // e.g. ["5A", "4B"]
-  assignedSubjects: string[];
   designation: string; // e.g. "Senior Usthad / Quran Instructor"
 }
 export type TeacherUser = MuallimUser;
@@ -27,7 +26,6 @@ export interface SadhrMuallimUser extends User {
   role: 'SADHR_MUALLIM';
   designation: string; // e.g. "Sadhr Muallim (Sadhr Mudarris) & Class 7 Mentor"
   assignedClasses: string[]; // e.g. ["7", "6"]
-  assignedSubjects: string[]; // e.g. ["Fiqh", "Quran", "Islamic Studies"]
 }
 export type AdminUser = SadhrMuallimUser;
 
@@ -55,7 +53,7 @@ export interface Student {
   bloodGroup?: string;
 }
 
-export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE';
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LEAVE' | 'HOLIDAY';
 
 export interface AttendanceRecord {
   id: string;
@@ -225,7 +223,6 @@ export interface ClassInfo {
   classTeacherId: string;
   classTeacherName: string;
   studentCount: number;
-  averageAttendance: number;
   averageProgress: number;
 }
 

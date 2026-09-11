@@ -88,7 +88,7 @@ export const AdminLayout: React.FC = () => {
               <div className="hidden sm:flex items-center gap-2 pl-2">
                 <Avatar name={user?.name || "Sadhr Muallim"} size="sm" ring />
                 <div className="text-left">
-                  <p className="text-xs font-bold text-white leading-tight">{user?.name || "Usthad Shihabudheen Saadi"}</p>
+                  <p className="text-xs font-bold text-white leading-tight">{user?.name || "Sadhr Muallim"}</p>
                   <p className="text-[10px] text-[#C9A227] font-semibold">Sadhr Mudarris</p>
                 </div>
               </div>
