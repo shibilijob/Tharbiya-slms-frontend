@@ -125,7 +125,7 @@ export const LandingPage: React.FC = () => {
               </h1>
 
               <p className="text-base sm:text-lg text-[#667085] leading-relaxed max-w-xl mx-auto lg:mx-0">
-                <span className='font-bold text-[#0F6B50]'>DARUNNAJATH MUNDAMBRA</span> യിലെ ഓരോ കുട്ടിയുടെയും പഠനം, ഖുർആൻ പുരോഗതി, ഹാജർ, സ്വഭാവവികസനം, നേട്ടങ്ങൾ എന്നിവ എളുപ്പത്തിൽ നിരീക്ഷിക്കാൻ സഹായിക്കുന്ന ഡിജിറ്റൽ പ്ലാറ്റ്ഫോം.
+                <span className='font-bold text-[#0F6B50]'>DARUNNAJATH MUNDAMBRA</span> യിലെ ഓരോ കുട്ടിയുടെയും പഠനം, ഖുർആൻ പുരോഗതി, ഹാജർ, സ്വഭാവവികസനം, നേട്ടങ്ങൾ എന്നിവ എളുപ്പത്തിൽ നിരീക്ഷിക്കാൻ സഹായിക്കുന്ന ഡിജിറ്റൽ പ്ലാറ്റ്‌ഫോം.
               </p>
 
               {/* CTAs */}
