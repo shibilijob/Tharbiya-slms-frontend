@@ -30,7 +30,7 @@ export const Button: React.FC<ButtonProps> = ({
     outline: "border border-[#E3EAE6] hover:bg-[#FAF8F2] text-[#1F2933] hover:border-[#bbdcd0] focus:ring-[#0F6B50]",
     ghost: "bg-transparent hover:bg-[#DDEDE5]/50 text-[#1F2933] focus:ring-[#0F6B50]",
     gold: "bg-[#C9A227] hover:bg-[#b08d1e] text-white focus:ring-[#C9A227] shadow-sm shadow-[#C9A227]/20",
-    danger: "bg-rose-600 hover:bg-rose-700 text-white focus:ring-rose-500"
+    danger: "bg-[#DC2626] hover:bg-[#B91C1C] text-black focus:ring-[#DC2626]"
   };
 
   const sizeClasses = {
