@@ -164,7 +164,12 @@ export const ParentManagerView: React.FC = () => {
       setIsModalOpen(false);
       await loadParents();
     } catch (err: any) {
-      setFormError(err?.message || 'Failed to save parent details.');
+      const existingParentName = err?.data?.data?.existingParentName;
+      setFormError(
+        existingParentName
+          ? `${existingParentName} is already using this phone number.`
+          : err?.message || 'Failed to save parent details.'
+      );
     } finally {
       setIsSaving(false);
     }
