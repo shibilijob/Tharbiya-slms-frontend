@@ -237,7 +237,7 @@ export const studentService = {
       const rawList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
       if (Array.isArray(rawList)) {
         const mapped = rawList.map(mapBackendStudentToFrontend);
-        const pagination: PaginationInfo = res.data?.pagination || {
+        const pagination: PaginationInfo = res.pagination || {
           total: mapped.length,
           page,
           limit,

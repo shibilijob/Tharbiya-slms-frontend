@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -8,6 +8,7 @@ import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
 import { StatCard } from '../../components/common/StatCard';
 import { Avatar } from '../../components/common/Avatar';
+import { api } from '../../lib/axios';
 import {
   GraduationCap,
   Users,
@@ -23,22 +24,50 @@ import {
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
 
+interface DashboardStats {
+  totalStudents: number;
+  totalTeachers: number;
+  totalClasses: number;
+}
+
 export const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const { students, attendance } = useData();
   const classesList = useClassStore((s) => s.classes);
   const fetchClasses = useClassStore((s) => s.fetchClasses);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
 
   useEffect(() => {
     fetchClasses();
   }, [fetchClasses]);
 
-  const totalStudents = students.length;
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchDashboardStats = async () => {
+      try {
+        const res = await api.get<DashboardStats>('/sadhr/stats');
+        if (!cancelled) {
+          setDashboardStats(res.data);
+        }
+      } catch (err) {
+        console.error('Failed to load dashboard stats:', err);
+      }
+    };
+
+    fetchDashboardStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const totalStudents = dashboardStats?.totalStudents ?? students.length;
   const uniqueTeachers = new Set(students.map(s => s.assignedTeacherId).filter(Boolean));
-  const totalTeachers = uniqueTeachers.size;
+  const totalTeachers = dashboardStats?.totalTeachers ?? uniqueTeachers.size;
   const uniqueParents = new Set(students.map(s => s.parentId).filter(Boolean));
   const totalParents = uniqueParents.size;
-  const totalClasses = classesList.length;
+  const totalClasses = dashboardStats?.totalClasses ?? classesList.length;
 
   const getClassAttendancePercentage = (className: string) => {
     const classNumber = className.replace(/^Class\s*/i, '').trim();

@@ -46,13 +46,14 @@ interface ClassOption {
 }
 
 export const StudentManagerView: React.FC = () => {
-  const { students, addStudent, updateStudent, deleteStudent } = useData();
+  const { students: contextStudents, addStudent, updateStudent, deleteStudent } = useData();
   const { showToast } = useNotifications();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
+  const [students, setStudents] = useState<Student[]>(contextStudents);
 
   // Dynamic dropdown data from backend
   const [parentsList, setParentsList] = useState<ParentOption[]>([]);
@@ -99,6 +100,48 @@ export const StudentManagerView: React.FC = () => {
   useEffect(() => {
     loadDropdownData();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStudents = async () => {
+      try {
+        const fetchedStudents: Student[] = [];
+        const classId = selectedClass !== 'ALL' ? selectedClass : undefined;
+        const status = selectedStatus !== 'ALL' ? selectedStatus : undefined;
+        let page = 1;
+        let hasNextPage = true;
+
+        while (hasNextPage) {
+          const result = await studentService.getPaginated({
+            page,
+            limit: 1000,
+            classId,
+            status,
+          });
+
+          fetchedStudents.push(...result.students);
+          hasNextPage = result.pagination.hasNextPage;
+          page += 1;
+        }
+
+        if (!cancelled) {
+          setStudents(fetchedStudents);
+        }
+      } catch (err) {
+        console.error('Failed to load students:', err);
+        if (!cancelled) {
+          setStudents(contextStudents);
+        }
+      }
+    };
+
+    loadStudents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [contextStudents, selectedClass, selectedStatus]);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -202,7 +245,7 @@ export const StudentManagerView: React.FC = () => {
       const parentPhone = parentObj?.phone || '';
 
       if (editingStudent) {
-        await updateStudent(editingStudent.id, {
+        const updated = await updateStudent(editingStudent.id, {
           name: name.trim(),
           malayalamName: malayalamName.trim(),
           admissionNo: admissionNo.trim(),
@@ -215,9 +258,10 @@ export const StudentManagerView: React.FC = () => {
           admissionDate,
           status,
         });
+        setStudents((prev) => prev.map((student) => student.id === updated.id ? updated : student));
         showToast(`✓ Student ${name} updated successfully!`);
       } else {
-        await addStudent({
+        const created = await addStudent({
           name: name.trim(),
           malayalamName: malayalamName.trim(),
           admissionNo: admissionNo.trim(),
@@ -232,6 +276,7 @@ export const StudentManagerView: React.FC = () => {
           admissionDate,
           status,
         });
+        setStudents((prev) => [created, ...prev.filter((student) => student.id !== created.id)]);
         showToast(`✓ New student ${name} enrolled successfully!`);
       }
       setIsModalOpen(false);
@@ -247,6 +292,7 @@ export const StudentManagerView: React.FC = () => {
     if (!deletingStudentId) return;
     try {
       await deleteStudent(deletingStudentId);
+      setStudents((prev) => prev.filter((student) => student.id !== deletingStudentId));
       showToast(`Student removed from system.`);
       setDeletingStudentId(null);
     } catch (e) {
