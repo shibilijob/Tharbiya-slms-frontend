@@ -302,6 +302,8 @@ export const studentService = {
         gender: studentData.gender,
         dateOfBirth: studentData.dob,
         parentId: studentData.parentId || undefined,
+        parentName: studentData.parentName || undefined,
+        parentPhone: studentData.parentPhone || undefined,
         classId: studentData.class,
         admissionDate: studentData.admissionDate,
       };
@@ -329,7 +331,11 @@ export const studentService = {
       if (updates.name !== undefined) payload.name = updates.name;
       if (updates.admissionNo !== undefined) payload.admissionNumber = updates.admissionNo;
       if (updates.malayalamName !== undefined) payload.nameMalayalam = updates.malayalamName;
-      if (updates.parentPhone !== undefined) payload.phone = updates.parentPhone;
+      if (updates.parentName !== undefined) payload.parentName = updates.parentName;
+      if (updates.parentPhone !== undefined) {
+        payload.parentPhone = updates.parentPhone;
+        payload.phone = updates.parentPhone;
+      }
       if (updates.gender !== undefined) payload.gender = updates.gender;
       if (updates.dob !== undefined) payload.dateOfBirth = updates.dob;
       if (updates.parentId !== undefined) payload.parentId = updates.parentId || undefined;

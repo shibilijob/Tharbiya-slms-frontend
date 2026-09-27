@@ -275,7 +275,7 @@ export const CreatePracticalCriteriaModal: React.FC<CreatePracticalCriteriaModal
                 )}
               </div>
               <p className="text-xs text-[#667085] mt-0.5">
-                Each assigned class manages its own isolated practical subjects in MongoDB
+                Each assigned class manages its own isolated practical subjects in Database
               </p>
             </div>
           </div>
@@ -457,7 +457,7 @@ export const CreatePracticalCriteriaModal: React.FC<CreatePracticalCriteriaModal
         <div className="flex items-center justify-between pt-3 border-t border-[#E3EAE6]">
           <div className="flex items-center gap-1.5 text-xs text-[#667085]">
             <Sparkles className="w-4 h-4 text-[#C9A227]" />
-            <span>Class {cleanClass} practical subjects are persisted in MongoDB</span>
+            <span>Class {cleanClass} practical subjects are persisted in Database</span>
           </div>
 
           <Button

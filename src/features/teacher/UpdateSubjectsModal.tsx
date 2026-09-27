@@ -276,7 +276,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
                 {subjects.length} Subjects for Class {cleanClass}
               </h4>
               <p className="text-xs text-[#667085] mt-0.5">
-                Each assigned class manages its own isolated subjects in MongoDB
+                Each assigned class manages its own isolated subjects in Database
               </p>
             </div>
           </div>
@@ -457,7 +457,7 @@ export const UpdateSubjectsModal: React.FC<UpdateSubjectsModalProps> = ({
         <div className="flex items-center justify-between pt-3 border-t border-[#E3EAE6]">
           <div className="flex items-center gap-1.5 text-xs text-[#667085]">
             <Sparkles className="w-4 h-4 text-[#C9A227]" />
-            <span>Class {cleanClass} changes are persisted in MongoDB database</span>
+            <span>Class {cleanClass} changes are persisted in Database database</span>
           </div>
 
           <div className="flex gap-2">
