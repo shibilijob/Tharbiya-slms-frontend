@@ -158,6 +158,13 @@ export const StudentManagerView: React.FC = () => {
   const [dob, setDob] = useState('');
   const [studentClass, setStudentClass] = useState('');
   const [parentId, setParentId] = useState('');
+  const [parentNameInput, setParentNameInput] = useState('');
+  const [parentPhoneInput, setParentPhoneInput] = useState('');
+  const [selectedParent, setSelectedParent] = useState<ParentOption | null>(null);
+  const [parentSuggestions, setParentSuggestions] = useState<ParentOption[]>([]);
+  const [isSearchingParent, setIsSearchingParent] = useState(false);
+  const [parentNameError, setParentNameError] = useState('');
+  const [parentPhoneError, setParentPhoneError] = useState('');
   const [admissionDate, setAdmissionDate] = useState('2022-06-01');
   const [status, setStatus] = useState<StudentStatus>('ACTIVE');
 
@@ -193,6 +200,17 @@ export const StudentManagerView: React.FC = () => {
     setCurrentPage(1);
   };
 
+  const handleParentNameChange = (value: string) => {
+    setParentNameInput(value);
+    setParentNameError('');
+
+    if (selectedParent && value !== selectedParent.name) {
+      setSelectedParent(null);
+      setParentId('');
+      setParentPhoneInput('');
+    }
+  };
+
   const handleOpenAdd = () => {
     setEditingStudent(null);
     setName('');
@@ -202,7 +220,13 @@ export const StudentManagerView: React.FC = () => {
     setDob('');
     const firstCls = classesList[0]?.name.replace(/^Class\s*/i, '') || '';
     setStudentClass(firstCls);
-    setParentId(parentsList[0]?.id || '');
+    setParentId('');
+    setParentNameInput('');
+    setParentPhoneInput('');
+    setSelectedParent(null);
+    setParentSuggestions([]);
+    setParentNameError('');
+    setParentPhoneError('');
     setAdmissionDate(new Date().toISOString().split('T')[0]);
     setStatus('ACTIVE');
     setIsModalOpen(true);
@@ -217,10 +241,102 @@ export const StudentManagerView: React.FC = () => {
     setDob(student.dob || '');
     setStudentClass(String(student.class).replace(/^Class\s*/i, ''));
     setParentId(student.parentId || '');
+    setParentNameInput(student.parentName || '');
+    setParentPhoneInput(student.parentPhone || '');
+    setSelectedParent(
+      student.parentId
+        ? {
+            id: student.parentId,
+            name: student.parentName || 'Parent',
+            phone: student.parentPhone || '',
+          }
+        : null
+    );
+    setParentSuggestions([]);
+    setParentNameError('');
+    setParentPhoneError('');
     setAdmissionDate(student.admissionDate || new Date().toISOString().split('T')[0]);
     setStatus(student.status || 'ACTIVE');
     setIsModalOpen(true);
   };
+
+  const handleParentPhoneChange = (value: string) => {
+    setParentPhoneInput(value);
+    setParentPhoneError('');
+
+    if (selectedParent && value !== selectedParent.phone) {
+      setSelectedParent(null);
+      setParentId('');
+      setParentNameInput('');
+    }
+  };
+
+  const handleSelectParent = (parent: ParentOption) => {
+    setSelectedParent(parent);
+    setParentId(parent.id);
+    setParentNameInput(parent.name);
+    setParentPhoneInput(parent.phone);
+    setParentSuggestions([]);
+    setParentNameError('');
+    setParentPhoneError('');
+  };
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    const cleanName = parentNameInput.trim();
+    const cleanPhone = parentPhoneInput.trim();
+    const isSelectedParentUnchanged =
+      selectedParent &&
+      cleanName === selectedParent.name &&
+      cleanPhone === selectedParent.phone;
+
+    if ((cleanName.length < 2 && cleanPhone.length < 3) || isSelectedParentUnchanged) {
+      setParentSuggestions([]);
+      setIsSearchingParent(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      setIsSearchingParent(true);
+      try {
+        const res = await api.get<any>('/sadhr/parents/search', {
+          params: {
+            name: cleanName || undefined,
+            phone: cleanPhone || undefined,
+          },
+        });
+        const raw = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (!cancelled) {
+          setParentSuggestions(
+            Array.isArray(raw)
+              ? raw.map((p: any) => ({
+                  id: p.id || p._id,
+                  name: p.name,
+                  phone: p.phone,
+                  email: p.email,
+                }))
+              : []
+          );
+        }
+      } catch (err) {
+        console.error('Failed to search parents:', err);
+        if (!cancelled) {
+          setParentSuggestions([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSearchingParent(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [isModalOpen, parentNameInput, parentPhoneInput, selectedParent]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,16 +349,24 @@ export const StudentManagerView: React.FC = () => {
       showToast('Please select a class from the database.');
       return;
     }
-    if (!parentId) {
-      showToast('Please select a parent from the database.');
+    const cleanParentPhone = parentPhoneInput.trim();
+    const cleanParentName = parentNameInput.trim();
+    if (!parentId && cleanParentName.length < 2) {
+      setParentNameError('Guardian / Parent name is required (min 2 characters)');
+      showToast('Guardian / Parent name is required (min 2 characters)');
+      return;
+    }
+    if (!parentId && cleanParentPhone.length < 5) {
+      setParentPhoneError('Valid mobile phone number is required');
+      showToast('Valid mobile phone number is required');
       return;
     }
 
     setIsSaving(true);
     try {
-      const parentObj = parentsList.find(p => p.id === parentId);
-      const parentName = parentObj?.name || '';
-      const parentPhone = parentObj?.phone || '';
+      const parentObj = selectedParent || parentsList.find(p => p.id === parentId);
+      const parentName = parentObj?.name || cleanParentName;
+      const parentPhone = parentObj?.phone || cleanParentPhone;
 
       if (editingStudent) {
         const updated = await updateStudent(editingStudent.id, {
@@ -253,7 +377,7 @@ export const StudentManagerView: React.FC = () => {
           dob,
           class: studentClass,
           parentId,
-          parentName,
+          parentName: parentName || 'Parent / Guardian',
           parentPhone,
           admissionDate,
           status,
@@ -269,7 +393,7 @@ export const StudentManagerView: React.FC = () => {
           dob,
           class: studentClass,
           parentId,
-          parentName,
+          parentName: parentName || 'Parent / Guardian',
           parentPhone,
           assignedTeacherId: '',
           teacherName: '',
@@ -636,18 +760,49 @@ export const StudentManagerView: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Assign Parent / Guardian"
-              value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
-            >
-              <option value="">-- Select Parent / Guardian --</option>
-              {parentsList.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.phone})
-                </option>
-              ))}
-            </Select>
+            <div className="space-y-3">
+              <p className="block text-xs font-bold text-[#1F2933] uppercase tracking-wider">
+                Add Parent
+              </p>
+              <Input
+                label="Parent Name"
+                placeholder="Enter parent name"
+                value={parentNameInput}
+                onChange={(e) => handleParentNameChange(e.target.value)}
+                error={parentNameError}
+              />
+              <div className="relative">
+                <Input
+                  label="Parent Phone Number"
+                  placeholder="Enter parent phone number"
+                  value={parentPhoneInput}
+                  onChange={(e) => handleParentPhoneChange(e.target.value)}
+                  error={parentPhoneError}
+                  helperText={isSearchingParent ? 'Searching...' : undefined}
+                />
+                {parentSuggestions.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full rounded-xl border border-[#E3EAE6] bg-white shadow-lg overflow-hidden">
+                    {parentSuggestions.map((parent) => (
+                      <button
+                        key={parent.id}
+                        type="button"
+                        onClick={() => handleSelectParent(parent)}
+                        className="w-full px-3.5 py-2.5 text-left hover:bg-[#FAF8F2] focus:bg-[#FAF8F2] focus:outline-none"
+                      >
+                        <p className="text-sm font-bold text-[#1F2933]">{parent.name}</p>
+                        <p className="text-xs text-[#667085]">{parent.phone}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selectedParent && (
+                <div className="rounded-xl border border-[#DDEDE5] bg-[#FAF8F2] px-3.5 py-2">
+                  <p className="text-sm font-bold text-[#1F2933]">{selectedParent.name}</p>
+                  <p className="text-xs text-[#667085]">{selectedParent.phone}</p>
+                </div>
+              )}
+            </div>
 
             <Input
               label="Admission Date"

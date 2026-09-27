@@ -347,7 +347,7 @@ export const LoginPage: React.FC = () => {
             <Input
               label={selectedPortal === 'PARENT' ? 'Mobile Number' : 'Email Address or Mobile'}
               type={selectedPortal === 'PARENT' ? 'tel' : 'text'}
-              placeholder={selectedPortal === 'PARENT' ? 'e.g. 9847123456' : 'e.g. shibili@yopmail.com'}
+              placeholder={selectedPortal === 'PARENT' ? 'e.g. 9847123456' : 'e.g. example@gmail.com'}
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               leftIcon={selectedPortal === 'PARENT' ? <Phone className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
@@ -470,7 +470,7 @@ export const LoginPage: React.FC = () => {
               <Input
                 label="Registered Usthad Email Address"
                 type="email"
-                placeholder="e.g. shibili@yopmail.com"
+                placeholder="e.g. abdulla@gmail.com"
                 value={resetIdentifier}
                 onChange={(e) => setResetIdentifier(e.target.value)}
                 leftIcon={<Mail className="w-4 h-4" />}

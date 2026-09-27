@@ -134,7 +134,7 @@ export const ResetPasswordPage: React.FC = () => {
                 <Input
                   label="Usthad Registered Email"
                   type="email"
-                  placeholder="e.g. shibili@yopmail.com"
+                  placeholder="e.g. example@gmail.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
