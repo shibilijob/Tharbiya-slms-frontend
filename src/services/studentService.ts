@@ -89,7 +89,7 @@ export const studentService = {
     }
 
     // 2. MUALLIM Flow (Fetch from assigned classes via /api/muallim/classes/:classId/students)
-    if (role === 'MUALLIM') {
+    if (role === 'MUALLIM' || (role === 'SADHR_MUALLIM' && params?.classId && params.classId !== 'ALL')) {
       try {
         let classList = assignedClasses
           .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
@@ -149,7 +149,7 @@ export const studentService = {
     // 3. SADHR_MUALLIM & Admin Flow
     if (role === 'SADHR_MUALLIM' || !role) {
       try {
-        const queryParams: Record<string, any> = { limit: params?.limit || 100 };
+        const queryParams: Record<string, any> = { limit: params?.limit || 2000 };
         if (params?.page) queryParams.page = params.page;
         if (params?.search) queryParams.search = params.search;
         if (params?.classId && params.classId !== 'ALL') queryParams.classId = params.classId;
@@ -237,14 +237,30 @@ export const studentService = {
       const rawList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
       if (Array.isArray(rawList)) {
         const mapped = rawList.map(mapBackendStudentToFrontend);
-        const pagination: PaginationInfo = res.pagination || {
-          total: mapped.length,
-          page,
-          limit,
-          totalPages: Math.ceil(mapped.length / limit) || 1,
-          hasPrevPage: page > 1,
-          hasNextPage: page < Math.ceil(mapped.length / limit),
-        };
+        const serverPagination = res.data?.pagination;
+        const pagination: PaginationInfo = serverPagination
+          ? {
+              total: typeof serverPagination.total === 'number' ? serverPagination.total : mapped.length,
+              page: typeof serverPagination.page === 'number' ? serverPagination.page : page,
+              limit: typeof serverPagination.limit === 'number' ? serverPagination.limit : limit,
+              totalPages: typeof serverPagination.totalPages === 'number'
+                ? serverPagination.totalPages
+                : (Math.ceil((serverPagination.total || mapped.length) / limit) || 1),
+              hasPrevPage: typeof serverPagination.hasPrevPage === 'boolean'
+                ? serverPagination.hasPrevPage
+                : page > 1,
+              hasNextPage: typeof serverPagination.hasNextPage === 'boolean'
+                ? serverPagination.hasNextPage
+                : page < (serverPagination.totalPages || Math.ceil(mapped.length / limit)),
+            }
+          : {
+              total: mapped.length,
+              page,
+              limit,
+              totalPages: Math.ceil(mapped.length / limit) || 1,
+              hasPrevPage: page > 1,
+              hasNextPage: page < Math.ceil(mapped.length / limit),
+            };
 
         return { students: mapped, pagination };
       }

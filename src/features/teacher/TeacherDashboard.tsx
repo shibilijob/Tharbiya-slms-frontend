@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
@@ -11,8 +11,9 @@ import { UpdateTimetableModal } from './UpdateTimetableModal';
 import { UpdateSubjectsModal } from './UpdateSubjectsModal';
 import { UpdatePracticalScoreModal } from './UpdatePracticalScoreModal';
 import { useClassStore, useSubjectStore, useTimetableStore } from '../../stores';
+import { useStudentStore } from '../../stores/studentStore';
 import { muallimService } from '../../services/muallimService';
-import { MuallimUser, TimetablePeriod, MadrasaDay } from '../../types';
+import { MuallimUser, TimetablePeriod, MadrasaDay, Student } from '../../types';
 import {
   Users,
   CalendarCheck,
@@ -49,8 +50,22 @@ export const TeacherDashboard: React.FC = () => {
 
   const subjects = useSubjectStore((s) => s.subjects);
   const fetchSubjects = useSubjectStore((s) => s.fetchSubjects);
+  const fetchStudents = useStudentStore((s) => s.fetchStudents);
 
-  const [dashboardClass, setDashboardClass] = useState<string>('5');
+  const [searchParams] = useSearchParams();
+  const queryClass = searchParams.get('class') || searchParams.get('classId');
+  const cleanQueryClass = useMemo(() => {
+    return queryClass ? String(queryClass).replace(/^Class\s*/i, '').trim() : null;
+  }, [queryClass]);
+
+  const isSadhrOrAdmin = user?.role === 'SADHR_MUALLIM' || (user as any)?.role === 'ADMIN';
+  const allSystemClasses = useClassStore((s) => s.classes);
+  const fetchClasses = useClassStore((s) => s.fetchClasses);
+  const storeSelectedClass = useClassStore((s) => s.selectedClass);
+
+  const [dashboardClass, setDashboardClass] = useState<string>(() => {
+    return cleanQueryClass || storeSelectedClass || '1';
+  });
   const [selectedDashboardDay, setSelectedDashboardDay] = useState<MadrasaDay>('Sunday');
   const [awardsGivenCount, setAwardsGivenCount] = useState<number | null>(null);
 
@@ -59,28 +74,48 @@ export const TeacherDashboard: React.FC = () => {
   const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
   const [isPracticalScoreModalOpen, setIsPracticalScoreModalOpen] = useState(false);
 
-  // Compute teacher classes with fallback to user object
+  // Compute teacher classes: Sadhr/Admin has access to all classes; Muallim restricted to assigned classes
   const teacherClasses = useMemo(() => {
-    if (teacherAssignedClasses.length > 0) return teacherAssignedClasses;
-    const teacherUser = user as any;
-    let rawList: any[] = [];
-    if (Array.isArray(teacherUser?.assignedClasses)) {
-      rawList = teacherUser.assignedClasses;
-    } else if (typeof teacherUser?.assignedClasses === 'string') {
-      try {
-        const parsed = JSON.parse(teacherUser.assignedClasses);
-        rawList = Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
-        rawList = [teacherUser.assignedClasses];
+    let classes: string[] = [];
+
+    if (isSadhrOrAdmin && allSystemClasses.length > 0) {
+      classes = allSystemClasses
+        .map((c) => String(c.name || '').replace(/^Class\s*/i, '').trim())
+        .filter(Boolean);
+    } else if (teacherAssignedClasses.length > 0) {
+      classes = [...teacherAssignedClasses];
+    } else {
+      const teacherUser = user as any;
+      let rawList: any[] = [];
+      if (Array.isArray(teacherUser?.assignedClasses)) {
+        rawList = teacherUser.assignedClasses;
+      } else if (typeof teacherUser?.assignedClasses === 'string') {
+        try {
+          const parsed = JSON.parse(teacherUser.assignedClasses);
+          rawList = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          rawList = [teacherUser.assignedClasses];
+        }
+      } else if (teacherUser?.assignedClass) {
+        rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
       }
-    } else if (teacherUser?.assignedClass) {
-      rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+      classes = rawList
+        .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
+        .filter(Boolean);
     }
-    const userClasses = rawList
-      .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-      .filter(Boolean);
-    return userClasses.length > 0 ? userClasses : ['5'];
-  }, [teacherAssignedClasses, user]);
+
+    if (cleanQueryClass && !classes.includes(cleanQueryClass)) {
+      classes = [cleanQueryClass, ...classes];
+    }
+
+    return classes.length > 0 ? classes : ['1'];
+  }, [teacherAssignedClasses, user, isSadhrOrAdmin, allSystemClasses, cleanQueryClass]);
+
+  useEffect(() => {
+    if (isSadhrOrAdmin && allSystemClasses.length === 0) {
+      fetchClasses();
+    }
+  }, [isSadhrOrAdmin, allSystemClasses.length, fetchClasses]);
 
   useEffect(() => {
     if (user) {
@@ -89,15 +124,26 @@ export const TeacherDashboard: React.FC = () => {
   }, [user, fetchAssignedClassesForTeacher]);
 
   useEffect(() => {
-    if (teacherClasses.length > 0 && !teacherClasses.includes(dashboardClass)) {
-      setDashboardClass(teacherClasses[0]);
+    if (cleanQueryClass) {
+      setDashboardClass(cleanQueryClass);
     }
-  }, [teacherClasses, dashboardClass]);
+  }, [cleanQueryClass]);
 
   useEffect(() => {
+    if (teacherClasses.length > 0 && !teacherClasses.includes(dashboardClass)) {
+      setDashboardClass(cleanQueryClass && teacherClasses.includes(cleanQueryClass) ? cleanQueryClass : teacherClasses[0]);
+    }
+  }, [teacherClasses, dashboardClass, cleanQueryClass]);
+
+  useEffect(() => {
+    fetchStudents();
+  }, [fetchStudents]);
+
+  useEffect(() => {
+    if (teacherClasses.length > 0 && !teacherClasses.includes(dashboardClass)) return;
     fetchSchedule(dashboardClass);
     fetchSubjects(dashboardClass);
-  }, [dashboardClass, fetchSchedule, fetchSubjects]);
+  }, [dashboardClass, teacherClasses, fetchSchedule, fetchSubjects]);
 
   useEffect(() => {
     let isMounted = true;
@@ -133,20 +179,42 @@ export const TeacherDashboard: React.FC = () => {
   const todaySchedule = classSchedule[selectedDashboardDay] || [];
   const activeSubjectsCount = subjects.length;
 
-  // Filter students assigned ONLY to this teacher's assigned classes
+  // Accumulate and preserve assigned students across all assigned classes
+  const [allAssignedStudents, setAllAssignedStudents] = useState<Student[]>([]);
+
+  useEffect(() => {
+    if (students.length > 0) {
+      setAllAssignedStudents((prev) => {
+        const studentMap = new Map<string, Student>();
+        prev.forEach((s) => studentMap.set(s.id, s));
+        students.forEach((s) => {
+          const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+          if (teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id)) {
+            studentMap.set(s.id, s);
+          }
+        });
+        return Array.from(studentMap.values());
+      });
+    }
+  }, [students, teacherClasses, user]);
+
+  // Total students across all assigned classes for this teacher
   const teacherStudents = useMemo(() => {
+    if (allAssignedStudents.length > 0) return allAssignedStudents;
     return students.filter(s => {
       const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
       return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
     });
-  }, [students, teacherClasses, user]);
+  }, [allAssignedStudents, students, teacherClasses, user]);
 
+  // Students for the currently selected class tab (for today's register table)
   const classStudents = useMemo(() => {
-    return students.filter(s => {
+    const pool = teacherStudents.length > 0 ? teacherStudents : students;
+    return pool.filter(s => {
       const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
       return sClass === dashboardClass;
     });
-  }, [students, dashboardClass]);
+  }, [teacherStudents, students, dashboardClass]);
 
   const todayStr = new Date().toISOString().split('T')[0];
   const todayAttendance = attendance.filter(a => a.date === todayStr);
@@ -187,14 +255,27 @@ export const TeacherDashboard: React.FC = () => {
               Assalamu Alaikum, {user?.name || "Usthad"}
             </h1>
             <p className="font-malayalam text-xs sm:text-sm text-[#DDEDE5] font-semibold">
-              {teacherClasses.map(c => `Class ${c}`).join(' & ') || `Class ${dashboardClass}`} • Darunnajath Mundambra
+              Class {dashboardClass} Workspace • Darunnajath Mundambra
             </p>
             <p className="text-xs text-[#DDEDE5]/80">
-              Assigned Classes: <strong className="text-white">{teacherClasses.map(c => `Class ${c}`).join(', ') || `Class ${dashboardClass}`}</strong>
+              {isSadhrOrAdmin ? (
+                <>Managing Class: <strong className="text-white">Class {dashboardClass}</strong> (Sadhr Administration)</>
+              ) : (
+                <>Assigned Classes: <strong className="text-white">{teacherClasses.map(c => `Class ${c}`).join(', ') || `Class ${dashboardClass}`}</strong></>
+              )}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {isSadhrOrAdmin && (
+              <Link
+                to="/admin/classes"
+                className="px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-extrabold text-xs flex items-center gap-2 border border-white/20 transition-all shadow-xs"
+              >
+                <ArrowRight className="w-4 h-4 rotate-180" />
+                Back to Classes
+              </Link>
+            )}
             <button
               onClick={() => setIsPracticalScoreModalOpen(true)}
               className="px-4 py-2.5 rounded-2xl bg-white text-[#0F6B50] hover:bg-[#DDEDE5] font-extrabold text-xs flex items-center gap-2 shadow-sm transition-all"
@@ -218,7 +299,11 @@ export const TeacherDashboard: React.FC = () => {
         <StatCard
           label="Total Students"
           value={totalStudentsCount}
-          sublabel={`Assigned in ${teacherClasses.map(c => `Class ${c}`).join(' & ') || `Class ${dashboardClass}`}`}
+          sublabel={
+            isSadhrOrAdmin
+              ? 'Across all institutional classes'
+              : `Assigned in ${teacherClasses.map(c => `Class ${c}`).join(' & ') || `Class ${dashboardClass}`}`
+          }
           icon={<Users className="w-5 h-5" />}
         />
         <StatCard
@@ -253,14 +338,13 @@ export const TeacherDashboard: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             {/* Show tabs only for assigned classes */}
             {teacherClasses.length > 1 ? (
-              <div className="flex bg-[#FAF8F2] border border-[#E3EAE6] p-1 rounded-xl">
+              <div className="flex bg-[#FAF8F2] border border-[#E3EAE6] p-1 rounded-xl max-w-full overflow-x-auto">
                 {teacherClasses.map(cls => (
                   <button
                     key={cls}
                     onClick={() => setDashboardClass(cls)}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                      dashboardClass === cls ? 'bg-[#0F6B50] text-white shadow-xs' : 'text-[#667085] hover:text-[#1F2933]'
-                    }`}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all shrink-0 ${dashboardClass === cls ? 'bg-[#0F6B50] text-white shadow-xs' : 'text-[#667085] hover:text-[#1F2933]'
+                      }`}
                   >
                     Class {cls}
                   </button>
@@ -404,11 +488,10 @@ export const TeacherDashboard: React.FC = () => {
               key={day}
               type="button"
               onClick={() => setSelectedDashboardDay(day)}
-              className={`px-3 py-1 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
-                selectedDashboardDay === day
-                  ? 'bg-[#0F6B50] text-white shadow-xs'
-                  : 'bg-[#FAF8F2] text-[#667085] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6]'
-              }`}
+              className={`px-3 py-1 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${selectedDashboardDay === day
+                ? 'bg-[#0F6B50] text-white shadow-xs'
+                : 'bg-[#FAF8F2] text-[#667085] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6]'
+                }`}
             >
               {day} {day === 'Friday' ? '🕌' : ''}
             </button>
@@ -556,3 +639,4 @@ export const TeacherDashboard: React.FC = () => {
     </div>
   );
 };
+
