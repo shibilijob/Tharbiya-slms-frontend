@@ -24,6 +24,25 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+const getResetEmailErrorMessage = (err: any) => {
+  const originalError = err?.originalError;
+  const message = err?.message || '';
+  const errorCode = originalError?.code || err?.code;
+
+  if (
+    !err?.status &&
+    (message === 'Network Error' ||
+      message.includes('ERR_CONNECTION_REFUSED') ||
+      message.includes('ECONNREFUSED') ||
+      errorCode === 'ERR_NETWORK' ||
+      errorCode === 'ECONNABORTED')
+  ) {
+    return 'Unable to connect to server. Please try again.';
+  }
+
+  return message || 'Failed to send password reset email. Please verify your email address.';
+};
+
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -128,6 +147,8 @@ export const LoginPage: React.FC = () => {
 
   const handleSendResetEmail = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (forgotLoading) return;
+
     const cleanEmail = resetIdentifier.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -148,7 +169,7 @@ export const LoginPage: React.FC = () => {
       await authService.sendMuallimResetEmail(cleanEmail);
       setForgotStep('SUCCESS');
     } catch (err: any) {
-      setForgotError(err?.message || 'Failed to send password reset email. Please verify your email address.');
+      setForgotError(getResetEmailErrorMessage(err));
     } finally {
       setForgotLoading(false);
     }

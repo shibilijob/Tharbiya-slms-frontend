@@ -232,6 +232,9 @@ export const authService = {
 
   async sendMuallimResetEmail(email: string): Promise<{ success: boolean; message: string; email: string; name: string }> {
     const res: any = await api.post('/auth/forgot-password/muallim', { email: email.trim().toLowerCase() });
+    if (res?.success !== true) {
+      throw new Error(res?.message || 'Failed to send password reset email. Please try again.');
+    }
     return res;
   },
 
