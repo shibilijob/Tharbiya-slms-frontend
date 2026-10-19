@@ -24,11 +24,20 @@ import {
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
 import { useClassStore } from '../../stores';
+import { Link, useSearchParams } from 'react-router-dom';
+import { muallimService } from '../../services/muallimService';
+import { mapBackendStudentToFrontend } from '../../services/studentService';
 
 export const StudentRosterView: React.FC = () => {
   const { students, getStudentSummary } = useData();
   const { user } = useAuth();
   const { showToast } = useNotifications();
+  const [searchParams] = useSearchParams();
+  const selectedClassId = searchParams.get('classId') || '';
+  const isSadhr = user?.role === 'SADHR_MUALLIM';
+  const [selectedClassStudents, setSelectedClassStudents] = useState<Student[]>([]);
+  const [loadedClassId, setLoadedClassId] = useState('');
+  const [rosterError, setRosterError] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
@@ -42,6 +51,24 @@ export const StudentRosterView: React.FC = () => {
       fetchAssignedClassesForTeacher(user);
     }
   }, [user, fetchAssignedClassesForTeacher]);
+
+  React.useEffect(() => {
+    let active = true;
+    setSelectedClassStudents([]);
+    setLoadedClassId('');
+    setRosterError(false);
+    if (!isSadhr || !selectedClassId) return () => { active = false; };
+    muallimService.getClassRoster(selectedClassId).then((response: any) => {
+      if (!active) return;
+      const rows = Array.isArray(response?.data) ? response.data : (Array.isArray(response?.data?.data) ? response.data.data : []);
+      setSelectedClassStudents(rows.map((row: any) => mapBackendStudentToFrontend(row)));
+      setLoadedClassId(selectedClassId);
+    }).catch((error) => {
+      console.error('Failed to load selected class roster:', error);
+      if (active) { setRosterError(true); setLoadedClassId(selectedClassId); }
+    });
+    return () => { active = false; };
+  }, [isSadhr, selectedClassId]);
 
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
@@ -76,7 +103,9 @@ export const StudentRosterView: React.FC = () => {
   }, [teacherAssignedClasses, teacherUser, students, user]);
 
   // Filter students assigned to teacher's assigned classes
-  const teacherStudents = students.filter(s => {
+  const teacherStudents = isSadhr
+    ? (loadedClassId === selectedClassId ? selectedClassStudents : [])
+    : students.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
     return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
   });
@@ -90,6 +119,9 @@ export const StudentRosterView: React.FC = () => {
     const matchesClass = selectedClass === 'ALL' || sClass === fClass;
     return matchesSearch && matchesClass;
   });
+
+  if (isSadhr && !selectedClassId) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Choose a class</h1><p className="mt-2 text-sm text-[#667085]">Open student dossiers from a selected class dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
+  if (isSadhr && rosterError) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Class unavailable</h1><p className="mt-2 text-sm text-[#667085]">This class roster could not be loaded or you are not authorized to view it.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Back to Class Management</Link></Card>;
 
   return (
     <div className="space-y-6">
@@ -105,7 +137,7 @@ export const StudentRosterView: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#667085] mt-1">
-            Displaying students enrolled in your assigned classes ({teacherClasses.map(c => `Class ${c}`).join(' & ')})
+            {isSadhr ? `Displaying students enrolled in selected class ${teacherStudents[0]?.class ? `Class ${teacherStudents[0].class}` : ''}` : `Displaying students enrolled in your assigned classes (${teacherClasses.map(c => `Class ${c}`).join(' & ')})`}
           </p>
         </div>
 
@@ -127,7 +159,7 @@ export const StudentRosterView: React.FC = () => {
           />
         </div>
 
-        <div className="w-full sm:w-56">
+        {!isSadhr && <div className="w-full sm:w-56">
           <Select
             value={selectedClass}
             onChange={(e) => setSelectedClass(e.target.value)}
@@ -139,7 +171,7 @@ export const StudentRosterView: React.FC = () => {
               </option>
             ))}
           </Select>
-        </div>
+        </div>}
       </div>
 
       {/* Empty State when no students match */}

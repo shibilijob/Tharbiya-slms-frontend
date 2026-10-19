@@ -70,19 +70,19 @@ export const useClassStore = create<ClassState>((set, get) => ({
   },
 
   fetchAssignedClassesForTeacher: async (user: any) => {
+    set({ teacherAssignedClasses: [], selectedClass: '' });
     try {
       const assigned = await classService.getAssignedClassesForTeacher(user);
-      if (assigned.length > 0) {
-        set((state) => ({
-          teacherAssignedClasses: assigned,
-          selectedClass: assigned.includes(state.selectedClass) ? state.selectedClass : assigned[0],
-        }));
-        return assigned;
-      }
+      set((state) => ({
+        teacherAssignedClasses: assigned,
+        selectedClass: assigned.includes(state.selectedClass) ? state.selectedClass : (assigned[0] || ''),
+      }));
+      return assigned;
     } catch (err) {
       console.warn('Could not query teacher assigned classes:', err);
+      set({ teacherAssignedClasses: [], selectedClass: '' });
+      return [];
     }
-    return get().teacherAssignedClasses;
   },
 
   createClass: async (payload: CreateClassPayload) => {

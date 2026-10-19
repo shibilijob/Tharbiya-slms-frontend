@@ -108,12 +108,7 @@ export const authService = {
   syncSessionUser(authUser: any, fallbackRole?: UserRole): User {
     const savedRole = (sessionStorage.getItem('pending_oauth_role') as UserRole) || fallbackRole;
     const appUser = mapBetterAuthUserToAppUser(authUser, savedRole);
-    const token = `sess_${appUser.id}_${Date.now()}`;
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(appUser));
-    if (!localStorage.getItem('tharbiyah_auth_token')) {
-      localStorage.setItem('tharbiyah_auth_token', token);
-      localStorage.setItem('token', token);
-    }
     sessionStorage.removeItem('pending_oauth_role');
     return appUser;
   },
@@ -145,11 +140,12 @@ export const authService = {
           apiRes?.token ||
           apiRes?.session?.token ||
           apiRes?.data?.token ||
-          apiRes?.data?.session?.token ||
-          `sess_${userObj.id || userObj._id}_${Date.now()}`;
+          apiRes?.data?.session?.token;
 
-        localStorage.setItem('tharbiyah_auth_token', token);
-        localStorage.setItem('token', token);
+        if (token) {
+          localStorage.setItem('tharbiyah_auth_token', token);
+          localStorage.setItem('token', token);
+        }
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(appUser));
         return appUser;
       }

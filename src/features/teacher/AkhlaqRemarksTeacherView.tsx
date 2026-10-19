@@ -32,6 +32,10 @@ import {
 } from 'lucide-react';
 import { useClassStore, usePracticalStore } from '../../stores';
 import { PracticalScore } from '../../services/practicalScoreService';
+import { useSearchParams, Link } from 'react-router-dom';
+import { classService, ClassAccessItem } from '../../services/classService';
+import { api } from '../../lib/axios';
+import { mapBackendStudentToFrontend } from '../../services/studentService';
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -40,7 +44,13 @@ const MONTH_NAMES = [
 
 export const AkhlaqRemarksTeacherView: React.FC = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const selectedClassId = searchParams.get('classId') || '';
+  const isSadhr = user?.role === 'SADHR_MUALLIM';
+  const [selectedClassAccess, setSelectedClassAccess] = useState<ClassAccessItem | null>(null);
+  const [classAccessLoaded, setClassAccessLoaded] = useState(!isSadhr);
   const { students, achievements, awardAchievement } = useData();
+  const [selectedClassStudents, setSelectedClassStudents] = useState<typeof students>([]);
   const { showToast, pushNotification } = useNotifications();
 
   const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
@@ -68,9 +78,43 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
     }
   }, [user, fetchAssignedClassesForTeacher]);
 
+  useEffect(() => {
+    if (!isSadhr) return;
+    let active = true;
+    setClassAccessLoaded(false);
+    setSelectedClassAccess(null);
+    if (!selectedClassId) { setClassAccessLoaded(true); return () => { active = false; }; }
+    classService.getClassAccessList().then((items) => {
+      if (!active) return;
+      const selected = items.find((item) => item.id === selectedClassId) || null;
+      setSelectedClassAccess(selected);
+      setClassAccessLoaded(true);
+    }).catch(() => { if (active) setClassAccessLoaded(true); });
+    return () => { active = false; };
+  }, [isSadhr, selectedClassId]);
+
+  useEffect(() => {
+    if (!isSadhr || !selectedClassAccess) {
+      setSelectedClassStudents([]);
+      return;
+    }
+    let active = true;
+    setSelectedClassStudents([]);
+    api.get(`/muallim/classes/${selectedClassAccess.id}/students`).then((response) => {
+      if (!active) return;
+      const rows = Array.isArray(response.data) ? response.data : response.data?.data || [];
+      setSelectedClassStudents(rows.map((row: any) => mapBackendStudentToFrontend(row)));
+    }).catch((error) => {
+      console.error('Failed to load selected class practical roster:', error);
+      if (active) setSelectedClassStudents([]);
+    });
+    return () => { active = false; };
+  }, [isSadhr, selectedClassAccess]);
+
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
   const teacherClasses = useMemo(() => {
+    if (isSadhr) return selectedClassAccess ? [selectedClassAccess.name.replace(/^Class\s*/i, '').trim()] : [];
     if (teacherAssignedClasses.length > 0) return teacherAssignedClasses;
 
     let rawList: any[] = [];
@@ -97,35 +141,41 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
       .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
       .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
     const unique = Array.from(new Set(fromStudents)).filter(Boolean);
-    return unique.length > 0 ? unique : ['4'];
-  }, [teacherAssignedClasses, teacherUser, students, user]);
+    return unique.length > 0 ? unique : (isSadhr ? [] : ['4']);
+  }, [teacherAssignedClasses, teacherUser, students, user, isSadhr]);
 
-  const [selectedClass, setSelectedClass] = useState(teacherClasses[0] || '4');
+  const [selectedClass, setSelectedClass] = useState(teacherClasses[0] || '');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Keep selectedClass synced if classes change
   useEffect(() => {
-    if (teacherClasses.length > 0 && !teacherClasses.includes(selectedClass) && selectedClass !== 'ALL') {
+    if (isSadhr && selectedClassAccess) {
+      setSelectedClass(selectedClassAccess.name.replace(/^Class\s*/i, '').trim());
+    } else if (!isSadhr && teacherClasses.length > 0 && !teacherClasses.includes(selectedClass) && selectedClass !== 'ALL') {
       setSelectedClass(teacherClasses[0]);
     }
-  }, [teacherClasses, selectedClass]);
+  }, [teacherClasses, selectedClass, isSadhr, selectedClassAccess]);
 
   // Fetch criteria and monthly scores whenever class, month, year, or subject changes
   useEffect(() => {
     if (selectedClass && selectedClass !== 'ALL') {
       fetchCriteria(selectedClass);
       fetchMonthlyScores(selectedClass, selectedPracticalSubjectId, selectedMonth, selectedYear);
-    } else if (teacherClasses[0]) {
+    } else if (!isSadhr && teacherClasses[0]) {
       fetchCriteria(teacherClasses[0]);
       fetchMonthlyScores(teacherClasses[0], selectedPracticalSubjectId, selectedMonth, selectedYear);
     }
-  }, [selectedClass, selectedMonth, selectedYear, selectedPracticalSubjectId, teacherClasses, fetchCriteria, fetchMonthlyScores]);
+  }, [selectedClass, selectedMonth, selectedYear, selectedPracticalSubjectId, teacherClasses, fetchCriteria, fetchMonthlyScores, isSadhr]);
 
   // Filter students assigned to teacher's assigned classes
-  const teacherStudents = students.filter(s => {
+  const scopedStudents = isSadhr ? selectedClassStudents : students;
+  const teacherStudents = scopedStudents.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+    return isSadhr
+      ? Boolean(selectedClassAccess && sClass === selectedClassAccess.name.replace(/^Class\s*/i, '').trim())
+      : teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
   });
+  const scopedAchievements = achievements.filter((achievement) => teacherStudents.some((student) => student.id === achievement.studentId));
 
   const filteredStudents = teacherStudents.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
@@ -223,6 +273,9 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
   const currentScoresList: PracticalScore[] = scoresByMonth[currentKey] || scoresByMonth[allKey] || [];
 
   const selectedSubjectMeta = criteriaList.find(c => c.id === selectedPracticalSubjectId);
+
+  if (isSadhr && !classAccessLoaded) return <Card className="p-8 text-center">Loading selected class practical scores…</Card>;
+  if (isSadhr && !selectedClassAccess) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">{selectedClassId ? 'Class unavailable' : 'Choose a class'}</h1><p className="mt-2 text-sm text-[#667085]">Open practical scores from a valid selected class dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
 
   return (
     <div className="space-y-6">
@@ -325,7 +378,7 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
           {/* Class and Practical Subject Filters */}
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Class Dropdown */}
-            <div className="flex items-center gap-1.5 bg-[#FAF8F2] border border-[#E3EAE6] px-3 py-1.5 rounded-xl">
+            {!isSadhr && <div className="flex items-center gap-1.5 bg-[#FAF8F2] border border-[#E3EAE6] px-3 py-1.5 rounded-xl">
               <span className="text-xs font-bold text-[#667085]">Class:</span>
               <select
                 value={selectedClass}
@@ -336,7 +389,8 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
                   <option key={c} value={c}>Class {c}</option>
                 ))}
               </select>
-            </div>
+            </div>}
+            {isSadhr && <span className="rounded-xl border border-[#E3EAE6] bg-[#FAF8F2] px-3 py-1.5 text-xs font-bold text-[#667085]">{selectedClassAccess?.name}</span>}
 
             {/* Practical Subject Dropdown */}
             <div className="flex items-center gap-1.5 bg-[#FAF8F2] border border-[#E3EAE6] px-3 py-1.5 rounded-xl">
@@ -514,20 +568,20 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
         <div className="lg:col-span-5 space-y-4">
           <Card className="p-5 sm:p-6 border-[#C9A227]/30">
             <h3 className="text-base font-bold text-[#1F2933] mb-4 pb-3 border-b border-[#E3EAE6] flex items-center justify-between">
-              <span>Awarded Badges ({achievements.filter(a => teacherStudents.some(s => s.id === a.studentId)).length})</span>
+              <span>Awarded Badges ({scopedAchievements.length})</span>
               <Button size="sm" variant="gold" onClick={() => setIsAwardModalOpen(true)}>
                 <Plus className="w-3.5 h-3.5 mr-1" /> Award
               </Button>
             </h3>
 
             <div className="space-y-3">
-              {achievements.length === 0 ? (
+              {scopedAchievements.length === 0 ? (
                 <div className="text-center py-6 bg-[#FAF8F2] rounded-xl text-xs text-[#667085]">
                   No badges awarded yet. Award milestone badges to motivate students!
                 </div>
               ) : (
-                achievements.slice(0, 6).map(badge => {
-                  const student = students.find(s => s.id === badge.studentId);
+                scopedAchievements.slice(0, 6).map(badge => {
+                  const student = scopedStudents.find(s => s.id === badge.studentId);
                   return (
                     <div
                       key={badge.id}
@@ -561,6 +615,7 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
         isOpen={isPracticalScoreModalOpen}
         onClose={() => setIsPracticalScoreModalOpen(false)}
         initialStudentId={selectedPracticalStudentId}
+        selectedClassId={isSadhr ? selectedClassId : undefined}
         initialMonth={selectedMonth}
         initialYear={selectedYear}
         initialSubjectId={selectedPracticalSubjectId !== 'ALL' ? selectedPracticalSubjectId : undefined}

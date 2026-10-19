@@ -76,8 +76,8 @@ export const useHifzStore = create<HifzState>((set, get) => ({
       return list;
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Failed to fetch targets';
-      set({ error: msg, isLoading: false });
-      return get().targets;
+      set({ error: msg, targets: [], selectedTarget: null, activeTarget: null, isLoading: false });
+      return [];
     }
   },
 
@@ -156,8 +156,8 @@ export const useHifzStore = create<HifzState>((set, get) => ({
       return recs;
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Failed to fetch Hifz records';
-      set({ error: msg, isLoading: false });
-      return get().records;
+      set({ error: msg, records: [], isLoading: false });
+      return [];
     }
   },
 
