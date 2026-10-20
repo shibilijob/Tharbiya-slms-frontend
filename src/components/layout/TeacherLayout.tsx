@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Avatar } from '../common/Avatar';
 import {
@@ -27,12 +27,18 @@ import { UpdatePracticalScoreModal } from '../../features/teacher/UpdatePractica
 
 import { useData } from '../../context/DataContext';
 import { useClassStore } from '../../stores';
+import { classService, ClassAccessItem } from '../../services/classService';
 
 export const TeacherLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const { students } = useData();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedClassId = searchParams.get('classId') || searchParams.get('class') || '';
+  const isSadhr = user?.role === 'SADHR_MUALLIM';
+  const [classAccessList, setClassAccessList] = useState<ClassAccessItem[]>([]);
+  const selectedClass = isSadhr ? classAccessList.find((item) => item.id === requestedClassId) : undefined;
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
 
   const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
@@ -47,6 +53,31 @@ export const TeacherLayout: React.FC = () => {
       fetchAssignedClassesForTeacher(user);
     }
   }, [user, fetchAssignedClassesForTeacher]);
+
+  React.useEffect(() => {
+    if (!isSadhr || !requestedClassId) {
+      setClassAccessList([]);
+      return;
+    }
+    let active = true;
+    classService.getClassAccessList().then((items) => {
+      if (active) setClassAccessList(items);
+    }).catch((error) => {
+      console.error('Unable to resolve the selected class for teacher navigation:', error);
+      if (active) setClassAccessList([]);
+    });
+    return () => { active = false; };
+  }, [isSadhr, requestedClassId]);
+
+  const selectedClassId = selectedClass?.id || '';
+  const selectedClassName = selectedClass?.name.replace(/^Class\s*/i, '').trim() || '';
+  const navPath = (path: string) => {
+    if (!isSadhr || !path.startsWith('/teacher/') || !requestedClassId) return path;
+    const [pathname, query = ''] = path.split('?');
+    const params = new URLSearchParams(query);
+    params.set('classId', requestedClassId);
+    return `${pathname}?${params.toString()}`;
+  };
 
   const teacherUser = user as any;
   const teacherClasses = React.useMemo(() => {
@@ -79,9 +110,13 @@ export const TeacherLayout: React.FC = () => {
     return unique;
   }, [teacherAssignedClasses, teacherUser, students, user]);
 
+  const scopedTeacherClasses = isSadhr ? (selectedClassName ? [selectedClassName] : []) : teacherClasses;
+
   const teacherStudents = students.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+    return isSadhr
+      ? Boolean(selectedClassName && sClass === selectedClassName)
+      : teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
   });
 
   // Mobile Bottom Navigation items (Thumb navigation)
@@ -118,7 +153,7 @@ export const TeacherLayout: React.FC = () => {
           <div className="flex items-center justify-between h-16 sm:h-18">
             {/* Branding & Usthad Greeting */}
             <div className="flex items-center gap-2.5 sm:gap-3">
-              <Link to="/teacher/dashboard" className="flex items-center gap-2.5">
+                <Link to={navPath('/teacher/dashboard')} className="flex items-center gap-2.5">
                 <Logo size="sm" imageClassName="w-9 h-9 sm:w-10 sm:h-10" />
               </Link>
               <div>
@@ -146,7 +181,7 @@ export const TeacherLayout: React.FC = () => {
               )}
 
               <div className="px-2.5 py-1 bg-[#DDEDE5] rounded-xl text-[11px] sm:text-xs font-bold text-[#084C3A]">
-                {teacherClasses.length > 0 ? teacherClasses.map(c => `Class ${c}`).join(' & ') : 'Faculty'}
+                {scopedTeacherClasses.length > 0 ? scopedTeacherClasses.map(c => `Class ${c}`).join(' & ') : 'Faculty'}
               </div>
 
               {/* Logout Button */}
@@ -195,10 +230,10 @@ export const TeacherLayout: React.FC = () => {
               <div className="p-3 bg-[#FAF8F2] rounded-xl mb-2">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[#667085]">Faculty Mentorship</p>
                 <p className="text-sm font-extrabold text-[#084C3A] mt-0.5">
-                  {teacherClasses.length > 0 ? teacherClasses.map(c => `Class ${c}`).join(', ') : 'Assigned Classes'}
+                  {scopedTeacherClasses.length > 0 ? scopedTeacherClasses.map(c => `Class ${c}`).join(', ') : (isSadhr ? 'Select a class from Class Management' : 'Assigned Classes')}
                 </p>
                 <p className="text-[11px] text-[#667085] mt-0.5">
-                  {teacherStudents.length} Active Students
+                  {isSadhr && !selectedClass ? '—' : teacherStudents.length} Active Students
                 </p>
               </div>
 
@@ -207,7 +242,7 @@ export const TeacherLayout: React.FC = () => {
                 return (
                   <Link
                     key={item.path}
-                    to={item.path}
+                    to={navPath(item.path)}
                     className={clsx(
                       "flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition-all",
                       isActive
@@ -225,7 +260,7 @@ export const TeacherLayout: React.FC = () => {
               })}
 
               {/* Quick Workspace Actions in Sidebar */}
-              <div className="pt-3 mt-3 border-t border-[#E3EAE6] space-y-1.5">
+              {(!isSadhr || selectedClass) && <div className="pt-3 mt-3 border-t border-[#E3EAE6] space-y-1.5">
                 <p className="px-2 text-[10px] font-bold uppercase tracking-wider text-[#667085]">
                   Class Actions
                 </p>
@@ -265,7 +300,7 @@ export const TeacherLayout: React.FC = () => {
                   </div>
                   <ChevronRight className="w-4 h-4 text-[#667085]" />
                 </button>
-              </div>
+              </div>}
             </div>
           </aside>
 
@@ -284,7 +319,7 @@ export const TeacherLayout: React.FC = () => {
             return (
               <Link
                 key={item.path}
-                to={item.path}
+                to={navPath(item.path)}
                 className={clsx(
                   "flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all relative",
                   isActive ? "text-[#0F6B50] font-bold" : "text-[#667085] hover:text-[#1F2933]"
@@ -334,6 +369,7 @@ export const TeacherLayout: React.FC = () => {
             </div>
 
             <div className="py-3 space-y-2">
+              {(!isSadhr || selectedClass) && <>
               {/* Quick Update Practical Score */}
               <button
                 type="button"
@@ -388,6 +424,7 @@ export const TeacherLayout: React.FC = () => {
                 </div>
               </button>
 
+              </>}
               {moreMenuItems.map(item => (
                 <Link
                   key={item.path}
@@ -423,20 +460,21 @@ export const TeacherLayout: React.FC = () => {
       <UpdateTimetableModal
         isOpen={isTimetableModalOpen}
         onClose={() => setIsTimetableModalOpen(false)}
-        assignedClasses={teacherClasses}
-        initialClass={teacherClasses[0]}
+        assignedClasses={scopedTeacherClasses}
+        initialClass={selectedClassName || scopedTeacherClasses[0]}
       />
 
       <UpdateSubjectsModal
         isOpen={isSubjectsModalOpen}
         onClose={() => setIsSubjectsModalOpen(false)}
-        assignedClasses={teacherClasses}
-        initialClass={teacherClasses[0]}
+        assignedClasses={scopedTeacherClasses}
+        initialClass={selectedClassName || scopedTeacherClasses[0]}
       />
 
       <UpdatePracticalScoreModal
         isOpen={isPracticalScoreModalOpen}
         onClose={() => setIsPracticalScoreModalOpen(false)}
+        selectedClassId={isSadhr ? selectedClassId : undefined}
       />
 
       <Toast />

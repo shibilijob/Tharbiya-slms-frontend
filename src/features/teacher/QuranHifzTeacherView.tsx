@@ -11,6 +11,8 @@ import { useClassStore, useHifzStore, useStudentStore } from '../../stores';
 import type { HifzRecordStatus, HifzSchedule, HifzTarget } from '../../services/hifzService';
 import { api } from '../../lib/axios';
 import { formatDate } from '../../utils/formatters';
+import { useSearchParams, Link } from 'react-router-dom';
+import { classService, ClassAccessItem } from '../../services/classService';
 
 const today = () => new Date().toISOString().split('T')[0];
 const nextMonth = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -20,11 +22,15 @@ const emptySchedule = (): HifzSchedule => ({ dateFrom: today(), dateTo: today(),
 export const QuranHifzTeacherView: React.FC = () => {
   const { user } = useAuth();
   const { showToast } = useNotifications();
+  const [searchParams] = useSearchParams();
+  const selectedClassId = searchParams.get('classId') || '';
+  const isSadhr = user?.role === 'SADHR_MUALLIM';
   const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
   const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
   const allStudents = useStudentStore((s) => s.students);
   const fetchStudents = useStudentStore((s) => s.fetchStudents);
   const targets = useHifzStore((s) => s.targets);
+  const hifzError = useHifzStore((s) => s.error);
   const selectedTarget = useHifzStore((s) => s.selectedTarget);
   const setSelectedTarget = useHifzStore((s) => s.setSelectedTarget);
   const records = useHifzStore((s) => s.records);
@@ -37,6 +43,8 @@ export const QuranHifzTeacherView: React.FC = () => {
   const updateRecord = useHifzStore((s) => s.updateRecord);
 
   const [selectedClass, setSelectedClass] = useState('');
+  const [selectedClassAccess, setSelectedClassAccess] = useState<ClassAccessItem | null>(null);
+  const [classAccessLoaded, setClassAccessLoaded] = useState(!isSadhr);
   const [classStudents, setClassStudents] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -71,18 +79,39 @@ export const QuranHifzTeacherView: React.FC = () => {
     const raw = (user as any)?.assignedClasses;
     const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
     const cleaned = list.map((item) => String(item).replace(/^Class\s*/i, '').trim()).filter(Boolean);
-    return cleaned.length > 0 ? cleaned : ['4'];
-  }, [teacherAssignedClasses, user]);
+    return cleaned.length > 0 ? cleaned : (isSadhr ? [] : ['4']);
+  }, [teacherAssignedClasses, user, isSadhr]);
 
   useEffect(() => {
-    if (assignedClasses.length > 0 && (!selectedClass || !assignedClasses.includes(selectedClass))) {
+    if (!isSadhr) return;
+    let active = true;
+    setClassAccessLoaded(false);
+    setSelectedClassAccess(null);
+    setSelectedClass('');
+    if (!selectedClassId) { setClassAccessLoaded(true); return () => { active = false; }; }
+    classService.getClassAccessList().then((items) => {
+      if (!active) return;
+      const selected = items.find((item) => item.id === selectedClassId) || null;
+      setSelectedClassAccess(selected);
+      setSelectedClass(selected?.name.replace(/^Class\s*/i, '').trim() || '');
+      setClassAccessLoaded(true);
+    }).catch(() => { if (active) setClassAccessLoaded(true); });
+    return () => { active = false; };
+  }, [isSadhr, selectedClassId]);
+
+  const hifzClassId = isSadhr ? selectedClassAccess?.id || '' : selectedClass;
+
+  useEffect(() => {
+    if (!isSadhr && assignedClasses.length > 0 && (!selectedClass || !assignedClasses.includes(selectedClass))) {
       setSelectedClass(assignedClasses[0]);
     }
-  }, [assignedClasses, selectedClass]);
+  }, [assignedClasses, selectedClass, isSadhr]);
 
   const loadClassData = useCallback(async (classId: string) => {
     if (!classId) return;
     setIsLoading(true);
+    setClassStudents([]);
+    useHifzStore.setState({ targets: [], records: [], selectedTarget: null, activeTarget: null, error: null });
     try {
       await fetchTargets(classId);
       await fetchRecords({ classId });
@@ -90,16 +119,16 @@ export const QuranHifzTeacherView: React.FC = () => {
         const res = await api.get(`/muallim/classes/${classId}/students`);
         setClassStudents(Array.isArray(res.data) ? res.data : res.data?.data || []);
       } catch {
-        setClassStudents(allStudents.filter((s) => String(s.class).replace(/^Class\s*/i, '').trim() === classId));
+        setClassStudents(isSadhr ? [] : allStudents.filter((s) => String(s.class).replace(/^Class\s*/i, '').trim() === classId));
       }
     } finally {
       setIsLoading(false);
     }
-  }, [allStudents, fetchRecords, fetchTargets]);
+  }, [allStudents, fetchRecords, fetchTargets, isSadhr]);
 
   useEffect(() => {
-    loadClassData(selectedClass);
-  }, [loadClassData, selectedClass]);
+    loadClassData(hifzClassId);
+  }, [loadClassData, hifzClassId]);
 
   const currentTarget = selectedTarget || targets[0] || null;
 
@@ -160,7 +189,7 @@ export const QuranHifzTeacherView: React.FC = () => {
     try {
       const firstSchedule = schedules[0];
       const payload = {
-        classId: selectedClass,
+        classId: hifzClassId,
         criteria: surahName.trim(),
         surahName: surahName.trim(),
         totalAyahsToMemorize: Number(totalAyahsToMemorize),
@@ -178,7 +207,7 @@ export const QuranHifzTeacherView: React.FC = () => {
         showToast(`New Hifz target added to Class ${selectedClass}`);
       }
       setIsTargetModalOpen(false);
-      await loadClassData(selectedClass);
+      await loadClassData(hifzClassId);
     } catch (err: any) {
       showToast(err?.data?.message || err?.message || 'Failed to save target');
     } finally {
@@ -189,7 +218,7 @@ export const QuranHifzTeacherView: React.FC = () => {
   const handleDeleteTarget = async (target: HifzTarget) => {
     if (!window.confirm(`Delete or archive "${target.surahName || target.criteria}" for Class ${selectedClass}?`)) return;
     await deleteTarget(target.id);
-    await loadClassData(selectedClass);
+    await loadClassData(hifzClassId);
   };
 
   const syncRecordForm = (student: any, targetId: string) => {
@@ -231,7 +260,7 @@ export const QuranHifzTeacherView: React.FC = () => {
       const studentId = activeStudent.id || activeStudent._id;
       const payload = {
         studentId,
-        classId: selectedClass,
+        classId: hifzClassId,
         hifzTargetId: selectedTargetIdForRecord,
         date: recordDate,
         progress: `Ayah ${ayahFrom}-${ayahTo}`,
@@ -245,7 +274,7 @@ export const QuranHifzTeacherView: React.FC = () => {
       else await createRecord(payload);
       showToast(`Hifz progress saved for ${activeStudent.name}`);
       setIsRecordModalOpen(false);
-      await loadClassData(selectedClass);
+      await loadClassData(hifzClassId);
     } catch (err: any) {
       showToast(err?.data?.message || err?.message || 'Failed to save record');
     } finally {
@@ -272,6 +301,9 @@ export const QuranHifzTeacherView: React.FC = () => {
     return { total, completed, partial, pending: Math.max(0, total - completed - partial) };
   }, [classStudents.length, currentTarget, records]);
 
+  if (isSadhr && (!selectedClassId || (classAccessLoaded && !selectedClassAccess))) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">{selectedClassId ? 'Class unavailable' : 'Choose a class'}</h1><p className="mt-2 text-sm text-[#667085]">Open Hifz from a valid selected class dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
+  if (isSadhr && !classAccessLoaded) return <Card className="p-8 text-center">Loading selected class Hifz data…</Card>;
+
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-[#0F6B50] via-[#0A4D39] to-[#063326] rounded-3xl p-6 sm:p-8 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -284,13 +316,14 @@ export const QuranHifzTeacherView: React.FC = () => {
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-white/10 p-3 rounded-2xl border border-white/15">
           <label className="text-xs font-bold text-emerald-100 whitespace-nowrap pl-2">Assigned Class:</label>
-          <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="px-4 py-2 text-xs font-bold rounded-xl bg-white text-[#1F2933] shadow-xs outline-none focus:ring-2 focus:ring-emerald-400">
+          {isSadhr ? <span className="px-4 py-2 text-xs font-bold rounded-xl bg-white text-[#1F2933]">{selectedClassAccess?.name}</span> : <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="px-4 py-2 text-xs font-bold rounded-xl bg-white text-[#1F2933] shadow-xs outline-none focus:ring-2 focus:ring-emerald-400">
             {assignedClasses.map((classId) => <option key={classId} value={classId}>Class {classId}</option>)}
-          </select>
+          </select>}
         </div>
       </div>
 
       <div className="space-y-3">
+        {hifzError && <Card className="border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">Unable to load Hifz data: {hifzError}</Card>}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm sm:text-base font-extrabold text-[#1F2933] flex items-center gap-2"><Target className="w-4 h-4 text-[#0F6B50]" />Class {selectedClass} Hifz Targets ({targets.length})</h2>

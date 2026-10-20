@@ -5,6 +5,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
+import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog';
 import { Avatar } from '../../components/common/Avatar';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
@@ -17,21 +18,38 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Calendar
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
 import { useClassStore } from '../../stores';
 import { useAttendanceStore } from '../../stores/attendanceStore';
+import { useSearchParams, Link } from 'react-router-dom';
+import { classService, ClassAccessItem } from '../../services/classService';
+import { api } from '../../lib/axios';
+import { mapBackendStudentToFrontend } from '../../services/studentService';
 
 export const AttendanceBatchMarker: React.FC = () => {
   const { user } = useAuth();
   const { students, attendance, batchMarkAttendance } = useData();
   const { showToast } = useNotifications();
+  const [searchParams] = useSearchParams();
+  const selectedClassId = searchParams.get('classId') || '';
+  const isSadhr = user?.role === 'SADHR_MUALLIM';
+  const [selectedClassAccess, setSelectedClassAccess] = useState<ClassAccessItem | null>(null);
+  const [classAccessLoaded, setClassAccessLoaded] = useState(false);
+  const [selectedClassStudents, setSelectedClassStudents] = useState<typeof students>([]);
+  const [rosterLoaded, setRosterLoaded] = useState(!isSadhr);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const attendanceError = useAttendanceStore((s) => s.error);
 
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isApplyingHoliday, setIsApplyingHoliday] = useState(false);
+  const [isHolidayConfirmationOpen, setIsHolidayConfirmationOpen] = useState(false);
+  const [loadedAttendanceKey, setLoadedAttendanceKey] = useState('');
+  const [selectedClassAttendance, setSelectedClassAttendance] = useState<typeof attendance>([]);
+  const [holidayDraftKey, setHolidayDraftKey] = useState('');
 
   const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
   const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
@@ -41,6 +59,50 @@ export const AttendanceBatchMarker: React.FC = () => {
       fetchAssignedClassesForTeacher(user);
     }
   }, [user, fetchAssignedClassesForTeacher]);
+
+  React.useEffect(() => {
+    if (!isSadhr) return;
+    let active = true;
+    setClassAccessLoaded(false);
+    setSelectedClassAccess(null);
+    setSelectedClass('');
+    classService.getClassAccessList().then((items) => {
+      if (!active) return;
+      setClassAccessLoaded(true);
+      const chosen = items.find((item) => item.id === selectedClassId) || null;
+      setSelectedClassAccess(chosen);
+      setSelectedClass(chosen ? chosen.name.replace(/^Class\s*/i, '').trim() : '');
+    }).catch((error) => { console.error('Unable to validate selected class:', error); if (active) setClassAccessLoaded(true); });
+    return () => { active = false; };
+  }, [isSadhr, selectedClassId]);
+
+  React.useEffect(() => {
+    if (!isSadhr || !selectedClassAccess) {
+      setSelectedClassStudents([]);
+      setRosterLoaded(!isSadhr);
+      setRosterError(null);
+      return;
+    }
+    let active = true;
+    setSelectedClassStudents([]);
+    setRosterLoaded(false);
+    setRosterError(null);
+    api.get(`/muallim/classes/${selectedClassAccess.id}/students`).then((response) => {
+      if (!active) return;
+      const data = Array.isArray(response.data) ? response.data : response.data?.data || [];
+      if (!Array.isArray(data)) throw new Error('The class roster response was not a student list');
+      setSelectedClassStudents(data.map((student: any) => mapBackendStudentToFrontend(student)));
+      setRosterLoaded(true);
+    }).catch((error) => {
+      console.error('Unable to load selected class roster:', error);
+      if (active) {
+        setSelectedClassStudents([]);
+        setRosterError(error?.response?.data?.message || error?.message || 'Unable to load this class roster');
+        setRosterLoaded(true);
+      }
+    });
+    return () => { active = false; };
+  }, [isSadhr, selectedClassAccess]);
 
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
@@ -75,10 +137,24 @@ export const AttendanceBatchMarker: React.FC = () => {
   }, [teacherAssignedClasses, teacherUser, students, user]);
 
   // Filter students assigned to teacher's assigned classes
-  const teacherStudents = students.filter(s => {
-    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
-  });
+  const sourceStudents = isSadhr ? selectedClassStudents : students;
+  const teacherStudents = React.useMemo(() => {
+    const scopedClasses = isSadhr ? (selectedClassAccess ? [selectedClass] : []) : teacherClasses;
+    return sourceStudents.filter(s => {
+      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+      return scopedClasses.includes(sClass) && (isSadhr || !user?.id || !s.assignedTeacherId || s.assignedTeacherId === user.id);
+    });
+  }, [sourceStudents, isSadhr, selectedClassAccess, selectedClass, teacherClasses, user?.id]);
+  const registerKey = isSadhr && selectedClassAccess ? `${selectedClassAccess.id}:${selectedDate}` : '';
+  const holidayClassKey = isSadhr
+    ? selectedClassAccess?.id || ''
+    : selectedClass !== 'ALL'
+      ? selectedClass
+      : teacherClasses.length === 1
+        ? teacherClasses[0]
+        : '';
+  const holidayActionKey = holidayClassKey ? `${holidayClassKey}:${selectedDate}` : '';
+  const canMarkClassHoliday = teacherStudents.length > 0 && Boolean(holidayActionKey);
 
   // Filter based on selected class and search query
   const filteredStudents = teacherStudents.filter(s => {
@@ -93,41 +169,50 @@ export const AttendanceBatchMarker: React.FC = () => {
 
   // Fetch confirmed attendance from MongoDB when date or class changes
   useEffect(() => {
-    const classParam =
+    if (isSadhr && !selectedClassAccess) return;
+    let active = true;
+    const classParam = isSadhr ? selectedClassAccess?.id :
       selectedClass !== 'ALL'
         ? selectedClass
         : teacherClasses.length === 1
         ? teacherClasses[0]
         : undefined;
-    useAttendanceStore.getState().fetchByDateAndClass(selectedDate, classParam);
-  }, [selectedDate, selectedClass, teacherClasses]);
-
-  const [attendanceState, setAttendanceState] = useState<Record<string, { status: AttendanceStatus; remarks: string }>>(() => {
-    const initial: Record<string, { status: AttendanceStatus; remarks: string }> = {};
-    teacherStudents.forEach(s => {
-      const rec = attendance.find(a => a.studentId === s.id && a.date === selectedDate);
-      initial[s.id] = {
-        status: rec?.status || 'PRESENT',
-        remarks: rec?.remarks || ''
-      };
+    const requestKey = isSadhr ? `${selectedClassAccess?.id}:${selectedDate}` : '';
+    if (isSadhr) {
+      setLoadedAttendanceKey('');
+      setSelectedClassAttendance([]);
+    }
+    useAttendanceStore.getState().fetchByDateAndClass(selectedDate, classParam).then((records) => {
+      if (!active || !isSadhr) return;
+      setSelectedClassAttendance(records);
+      setLoadedAttendanceKey(requestKey);
     });
-    return initial;
-  });
+    return () => { active = false; };
+  }, [selectedDate, selectedClass, teacherClasses, isSadhr, selectedClassAccess]);
+
+  const [attendanceState, setAttendanceState] = useState<Record<string, { status: AttendanceStatus; remarks: string }>>({});
 
   // Sync attendance state when date, attendance records, or students change
   useEffect(() => {
     setAttendanceState(prev => {
       const nextState: Record<string, { status: AttendanceStatus; remarks: string }> = { ...prev };
-      students.forEach(s => {
-        const rec = attendance.find(a => a.studentId === s.id && a.date === selectedDate);
-        nextState[s.id] = {
-          status: rec?.status || nextState[s.id]?.status || 'PRESENT',
-          remarks: rec?.remarks || nextState[s.id]?.remarks || ''
+      const attendanceForRegister = isSadhr ? selectedClassAttendance : attendance;
+      let changed = false;
+      teacherStudents.forEach(s => {
+        const rec = attendanceForRegister.find(a => a.studentId === s.id && a.date === selectedDate);
+        const nextStudentState = {
+          status: rec?.status || 'PRESENT',
+          remarks: rec?.remarks || ''
         };
+        const currentStudentState = prev[s.id];
+        if (currentStudentState?.status !== nextStudentState.status || currentStudentState?.remarks !== nextStudentState.remarks) {
+          nextState[s.id] = nextStudentState;
+          changed = true;
+        }
       });
-      return nextState;
+      return changed ? nextState : prev;
     });
-  }, [selectedDate, attendance, students]);
+  }, [selectedDate, attendance, selectedClassAttendance, isSadhr, teacherStudents]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
     setAttendanceState(prev => ({
@@ -164,10 +249,56 @@ export const AttendanceBatchMarker: React.FC = () => {
     showToast(`Marked ${filteredStudents.length} students as ${label}`);
   };
 
+  const openHolidayConfirmation = () => {
+    if (isApplyingHoliday || isSaving || !canMarkClassHoliday) return;
+    setIsHolidayConfirmationOpen(true);
+  };
+
+  const handleCloseHolidayConfirmation = () => {
+    if (!isApplyingHoliday) setIsHolidayConfirmationOpen(false);
+  };
+
+  const handleConfirmMarkAllHoliday = async () => {
+    if (isApplyingHoliday || isSaving || !canMarkClassHoliday) return;
+    const classLabel = isSadhr
+      ? selectedClassAccess?.name || `Class ${selectedClass}`
+      : selectedClass === 'ALL'
+        ? `Class ${teacherClasses[0]}`
+        : `Class ${selectedClass}`;
+    setIsApplyingHoliday(true);
+    try {
+      // Allow the disabled/loading state to render before updating the full roster.
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      setAttendanceState((prev) => {
+        const updated = { ...prev };
+        teacherStudents.forEach((student) => {
+          updated[student.id] = {
+            status: 'HOLIDAY',
+            remarks: updated[student.id]?.remarks || '',
+          };
+        });
+        return updated;
+      });
+      setHolidayDraftKey(holidayActionKey);
+      setIsHolidayConfirmationOpen(false);
+      showToast(`Holiday marked for all ${teacherStudents.length} students in ${classLabel}. Save Register to persist.`);
+    } catch (error: any) {
+      console.error('Failed to mark class attendance as Holiday:', error);
+      showToast(error?.message || 'Failed to mark students as Holiday');
+    } finally {
+      setIsApplyingHoliday(false);
+    }
+  };
+
   const handleSaveAttendance = async () => {
+    if (isSaving) return;
     setIsSaving(true);
     try {
-      const targetStudents = filteredStudents.length > 0 ? filteredStudents : teacherStudents;
+      const targetStudents = holidayDraftKey === holidayActionKey ? teacherStudents : filteredStudents;
+      if (targetStudents.length === 0) {
+        showToast('No students match the current class and search filters');
+        return;
+      }
       const updates = targetStudents.map(s => ({
         studentId: s.id,
         date: selectedDate,
@@ -175,7 +306,7 @@ export const AttendanceBatchMarker: React.FC = () => {
         remarks: attendanceState[s.id]?.remarks || undefined
       }));
 
-      const targetClassId =
+      const targetClassId = isSadhr ? selectedClassAccess?.id :
         selectedClass !== 'ALL'
           ? selectedClass
           : teacherClasses.length === 1
@@ -187,6 +318,12 @@ export const AttendanceBatchMarker: React.FC = () => {
       }
 
       await batchMarkAttendance(updates, user.id, targetClassId);
+      const savedRecords = await useAttendanceStore.getState().fetchByDateAndClass(selectedDate, targetClassId);
+      if (isSadhr) {
+        setSelectedClassAttendance(savedRecords);
+        setLoadedAttendanceKey(registerKey);
+      }
+      if (holidayDraftKey === holidayActionKey) setHolidayDraftKey('');
       const classLabel = selectedClass === 'ALL' ? teacherClasses.map(c => `Class ${c}`).join(' & ') : `Class ${selectedClass}`;
       showToast(`✓ Attendance register for ${classLabel} (${formatDate(selectedDate)}) saved successfully!`);
     } catch (e: any) {
@@ -198,10 +335,27 @@ export const AttendanceBatchMarker: React.FC = () => {
     }
   };
 
+  if (isSadhr && !selectedClassId) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Choose a class</h1><p className="mt-2 text-sm text-[#667085]">Open the attendance register from a selected class dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
+  if (isSadhr && selectedClassId && !classAccessLoaded) return <Card className="p-8 text-center">Loading selected class attendance…</Card>;
+  if (isSadhr && selectedClassId && classAccessLoaded && !selectedClassAccess) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Class unavailable</h1><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Back to Class Management</Link></Card>;
+
+  if (isSadhr && selectedClassAccess && !rosterLoaded) return <Card className="p-8 text-center">Loading students for {selectedClassAccess.name}...</Card>;
+  if (isSadhr && rosterError) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Unable to load class students</h1><p className="mt-2 text-sm text-rose-700">{rosterError}</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Back to Class Management</Link></Card>;
+  if (isSadhr && registerKey !== loadedAttendanceKey) return <Card className="p-8 text-center">Loading selected class attendance...</Card>;
+  if (attendanceError) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Unable to load attendance</h1><p className="mt-2 text-sm text-rose-700">{attendanceError}</p><Button className="mt-4" onClick={() => {
+    const classParam = isSadhr ? selectedClassAccess?.id : selectedClass !== 'ALL' ? selectedClass : teacherClasses.length === 1 ? teacherClasses[0] : undefined;
+    setLoadedAttendanceKey('');
+    useAttendanceStore.getState().fetchByDateAndClass(selectedDate, classParam).then((records) => {
+      if (isSadhr) {
+        setSelectedClassAttendance(records);
+        setLoadedAttendanceKey(registerKey);
+      }
+    });
+  }}>Retry</Button></Card>;
+
   const presentCount = filteredStudents.filter(s => (attendanceState[s.id]?.status || 'PRESENT') === 'PRESENT').length;
   const absentCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'ABSENT').length;
   const leaveCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'LEAVE').length;
-  const holidayCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'HOLIDAY').length;
 
   return (
     <div className="space-y-6">
@@ -221,24 +375,12 @@ export const AttendanceBatchMarker: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button
-            size="md"
-            variant="primary"
-            onClick={handleSaveAttendance}
-            isLoading={isSaving}
-            leftIcon={<Save className="w-4 h-4" />}
-            className="shadow-sm shadow-[#0F6B50]/20"
-          >
-            Save Register
-          </Button>
-        </div>
       </div>
 
       {/* Select Class & Filter Controls */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
         {/* Date Selector */}
-        <div className="sm:col-span-4">
+        <div className={isSadhr ? 'sm:col-span-6' : 'sm:col-span-4'}>
           <Input
             label="Register Date"
             type="date"
@@ -248,7 +390,7 @@ export const AttendanceBatchMarker: React.FC = () => {
         </div>
 
         {/* Select Class Option */}
-        <div className="sm:col-span-4">
+        {!isSadhr && <div className="sm:col-span-4">
           <Select
             label="Select Class"
             value={selectedClass}
@@ -261,10 +403,10 @@ export const AttendanceBatchMarker: React.FC = () => {
               </option>
             ))}
           </Select>
-        </div>
+        </div>}
 
         {/* Search Input */}
-        <div className="sm:col-span-4">
+        <div className={isSadhr ? 'sm:col-span-6' : 'sm:col-span-4'}>
           <Input
             label="Search Student"
             placeholder="Filter student list..."
@@ -293,10 +435,6 @@ export const AttendanceBatchMarker: React.FC = () => {
             <span>Absent: {absentCount}</span>
           </div>
 
-          <div className="bg-slate-100 text-slate-800 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5">
-            <Calendar className="w-4 h-4 text-slate-600" />
-            <span>Holiday: {holidayCount}</span>
-          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -306,7 +444,19 @@ export const AttendanceBatchMarker: React.FC = () => {
           <Button size="sm" variant="outline" onClick={() => handleMarkAll('ABSENT')}>
             Reset to Absent
           </Button>
+          <Button
+            size="sm"
+            variant="gold"
+            onClick={openHolidayConfirmation}
+            disabled={!canMarkClassHoliday || isApplyingHoliday || isSaving}
+            isLoading={isApplyingHoliday}
+          >
+            Mark as Holiday
+          </Button>
         </div>
+        {selectedClass === 'ALL' && !isSadhr && teacherClasses.length > 1 && (
+          <p className="text-xs text-[#667085]">Select one class to mark every student as Holiday.</p>
+        )}
 
         <div className="flex items-center gap-2 text-xs font-bold text-[#0F6B50]">
           <Badge variant="green" size="sm">
@@ -411,8 +561,30 @@ export const AttendanceBatchMarker: React.FC = () => {
               </Card>
             );
           })}
+          <div className="flex justify-end pt-2">
+            <Button
+              size="md"
+              variant="primary"
+              onClick={handleSaveAttendance}
+              isLoading={isSaving}
+              leftIcon={<Save className="w-4 h-4" />}
+              className="shadow-sm shadow-[#0F6B50]/20"
+            >
+              Save Register
+            </Button>
+          </div>
         </div>
       )}
+      <ConfirmationDialog
+        isOpen={isHolidayConfirmationOpen}
+        onClose={handleCloseHolidayConfirmation}
+        onConfirm={handleConfirmMarkAllHoliday}
+        title="Mark All as Holiday?"
+        message="This will mark every student in the selected class as Holiday for the selected date. Do you want to continue?"
+        cancelText="Cancel"
+        confirmText="Confirm"
+        isLoading={isApplyingHoliday}
+      />
     </div>
   );
 };

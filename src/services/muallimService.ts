@@ -59,8 +59,8 @@ export const muallimService = {
   /**
    * Workspace Dashboard Overview Stats
    */
-  async getDashboard() {
-    const res = await api.get("/muallim/dashboard");
+  async getDashboard(classId?: string) {
+    const res = await api.get("/muallim/dashboard", { params: classId ? { classId } : {} });
     return res.data;
   },
 
@@ -68,7 +68,7 @@ export const muallimService = {
    * Class Roster & Student Details
    */
   async getClassRoster(classId: string) {
-    const res = await api.get(`/muallim/classes/${classId}/roster`);
+    const res = await api.get(`/muallim/classes/${classId}/students`);
     return res.data;
   },
 

@@ -9,7 +9,7 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
 import { Avatar } from '../../components/common/Avatar';
-import { useClassStore, useSubjectStore } from '../../stores';
+import { useClassStore, useSubjectStore, useAssessmentStore } from '../../stores';
 import { SubjectMeta, EXAM_TERMS } from '../../data/madrasaCurriculum';
 import { SubjectName, ExamTerm, AcademicAssessment } from '../../types';
 import {
@@ -27,6 +27,8 @@ import {
   Layers
 } from 'lucide-react';
 import { formatDate, getGradeBadgeClass } from '../../utils/formatters';
+import { Link, useSearchParams } from 'react-router-dom';
+import { classService, ClassAccessItem } from '../../services/classService';
 
 const normalizeClassValue = (value?: string) =>
   String(value || '').replace(/^Class\s*/i, '').trim();
@@ -42,7 +44,13 @@ const subjectBelongsToClass = (subject: SubjectMeta, classValue: string) => {
 export const AcademicAssessmentsTeacherView: React.FC = () => {
   const { user } = useAuth();
   const { students, assessments, saveAssessment } = useData();
+  const fetchAssessments = useAssessmentStore((s) => s.fetchAssessments);
   const { showToast, pushNotification } = useNotifications();
+  const [searchParams] = useSearchParams();
+  const selectedClassId = searchParams.get('classId') || '';
+  const isSadhr = user?.role === 'SADHR_MUALLIM';
+  const [selectedClassAccess, setSelectedClassAccess] = useState<ClassAccessItem | null>(null);
+  const [classAccessLoaded, setClassAccessLoaded] = useState(!isSadhr);
 
   const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
   const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
@@ -52,6 +60,30 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
       fetchAssignedClassesForTeacher(user);
     }
   }, [user, fetchAssignedClassesForTeacher]);
+
+  useEffect(() => {
+    if (!isSadhr) return;
+    let active = true;
+    setClassAccessLoaded(false);
+    setSelectedClassAccess(null);
+    setSelectedClassFilter('');
+    if (!selectedClassId) { setClassAccessLoaded(true); return () => { active = false; }; }
+    classService.getClassAccessList().then((classes) => {
+      if (!active) return;
+      const selected = classes.find((item) => item.id === selectedClassId) || null;
+      setSelectedClassAccess(selected);
+      setSelectedClassFilter(selected?.name.replace(/^Class\s*/i, '').trim() || '');
+      setFormClass(selected?.name.replace(/^Class\s*/i, '').trim() || '');
+      setClassAccessLoaded(true);
+    }).catch(() => { if (active) setClassAccessLoaded(true); });
+    return () => { active = false; };
+  }, [isSadhr, selectedClassId]);
+
+  useEffect(() => {
+    if (isSadhr && selectedClassAccess) {
+      void fetchAssessments(selectedClassAccess.id);
+    }
+  }, [isSadhr, selectedClassAccess, fetchAssessments]);
 
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
@@ -82,13 +114,13 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
       .filter(s => s.assignedTeacherId === user?.id || (user?.name && s.teacherName === user.name))
       .map(s => String(s.class).replace(/^Class\s*/i, '').trim());
     const unique = Array.from(new Set(fromStudents)).filter(Boolean);
-    return unique.length > 0 ? unique : ['4'];
+    return unique.length > 0 ? unique : (user?.role === 'SADHR_MUALLIM' ? [] : ['4']);
   }, [teacherAssignedClasses, teacherUser, students, user]);
 
   // Filter students assigned to teacher's assigned classes
   const teacherStudents = students.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-    return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+    return (isSadhr ? selectedClassAccess?.name.replace(/^Class\s*/i, '').trim() === sClass : teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id));
   });
 
   // Subjects list from service for the active class filter
@@ -124,10 +156,10 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   }, [selectedClassFilter, teacherClasses]);
 
   useEffect(() => {
-    if (teacherClasses.length > 0 && !selectedClassFilter) {
+    if (!isSadhr && teacherClasses.length > 0 && !selectedClassFilter) {
       setSelectedClassFilter(teacherClasses[0]);
     }
-  }, [teacherClasses, selectedClassFilter]);
+  }, [teacherClasses, selectedClassFilter, isSadhr]);
 
   // Modal form state
   const [formClass, setFormClass] = useState<string>(teacherClasses[0] || '5');
@@ -265,6 +297,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
 
       await saveAssessment({
         studentId: targetStudentId,
+        classId: isSadhr ? selectedClassAccess!.id : formClass,
         subject: formSubject as SubjectName,
         examTerm: formExamTerm,
         date: new Date().toISOString().split('T')[0],
@@ -275,7 +308,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
         teacherId: user.id
       });
 
-      const st = students.find(s => s.id === targetStudentId);
+      const st = teacherStudents.find(s => s.id === targetStudentId);
       showToast(`✓ ${formSubject} (${formExamTerm}) marks saved for ${st?.name || 'Student'}`);
 
       // Push notification to parent
@@ -290,8 +323,9 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
       }
 
       setIsModalOpen(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to save assessment", e);
+      showToast(e?.response?.data?.message || e?.message || 'Failed to save assessment marks');
     } finally {
       setIsSaving(false);
     }
@@ -322,6 +356,9 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
       records: studentRecords
     };
   };
+
+  if (isSadhr && (!selectedClassId || (classAccessLoaded && !selectedClassAccess))) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">{selectedClassId ? 'Class unavailable' : 'Choose a class'}</h1><p className="mt-2 text-sm text-[#667085]">Open assessments from a valid selected class dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
+  if (isSadhr && !classAccessLoaded) return <Card className="p-8 text-center">Loading selected class assessments…</Card>;
 
   return (
     <div className="space-y-6">
@@ -357,7 +394,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
       {/* Control Selectors: Class, Subject, Exam Term, Search */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-4 rounded-2xl border border-[#E3EAE6] shadow-2xs">
         {/* Class Filter */}
-        <Select
+        {!isSadhr && <Select
           label="Filter Class"
           value={selectedClassFilter}
           onChange={(e) => setSelectedClassFilter(e.target.value)}
@@ -367,7 +404,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
               Class {c} ({c}-ാം ക്ലാസ്)
             </option>
           ))}
-        </Select>
+        </Select>}
 
         {/* Subject Filter */}
         <Select

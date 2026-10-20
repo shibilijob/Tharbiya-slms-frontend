@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
@@ -9,7 +10,7 @@ import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog
 import { useNotifications } from '../../context/NotificationContext';
 import { useClassStore } from '../../stores';
 import { ClassItem, TeacherOption } from '../../services/classService';
-import { Layers, Plus, Edit2, Trash2, Search, RefreshCw, UserCheck } from 'lucide-react';
+import { Layers, Plus, Edit2, Trash2, Search, RefreshCw, UserCheck, ArrowRight } from 'lucide-react';
 
 export type { ClassItem, TeacherOption };
 
@@ -21,6 +22,7 @@ const sortClassesInOrder = (list: ClassItem[]): ClassItem[] => {
 };
 
 export const ClassManagerView: React.FC = () => {
+  const navigate = useNavigate();
   const classesList = useClassStore((s) => s.classes);
   const teachersList = useClassStore((s) => s.teachersList);
   const isLoading = useClassStore((s) => s.isLoading);
@@ -221,7 +223,10 @@ export const ClassManagerView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-[#E3EAE6] flex items-center justify-end gap-2">
+              <div className="mt-4 pt-3 border-t border-[#E3EAE6] flex items-center justify-between gap-2">
+                <Button size="sm" variant="primary" disabled={cls.isActive === false} onClick={() => navigate(`/teacher/dashboard?classId=${encodeURIComponent(cls.id)}`)} className="text-xs">
+                  {cls.isActive === false ? 'Inactive' : 'Enter to the class'} <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
                 <div className="flex items-center gap-1.5">
                   <Button
                     size="sm"

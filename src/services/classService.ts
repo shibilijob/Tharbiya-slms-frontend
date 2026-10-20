@@ -12,6 +12,8 @@ export interface ClassItem {
   isActive?: boolean;
 }
 
+export interface ClassAccessItem { id: string; name: string; }
+
 export interface TeacherOption {
   id: string;
   name: string;
@@ -89,43 +91,19 @@ export const classService = {
    * Fetch Muallim assigned classes from backend
    */
   async getAssignedClassesForTeacher(user: { id?: string; email?: string; phone?: string; name?: string }): Promise<string[]> {
-    try {
-      const res = await api.get<any>('/faculty-members');
-      const teachers = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-      if (Array.isArray(teachers) && teachers.length > 0) {
-        const matched = teachers.find((t: any) =>
-          (user?.id && (t.id === user.id || t._id === user.id)) ||
-          (user?.email && t.email && t.email.toLowerCase() === user.email.toLowerCase()) ||
-          (user?.phone && t.phone && t.phone === user.phone) ||
-          (user?.name && t.name && (
-            t.name.toLowerCase() === user.name.toLowerCase() ||
-            t.name.toLowerCase().includes(user.name.toLowerCase()) ||
-            user.name.toLowerCase().includes(t.name.toLowerCase())
-          ))
-        );
+    void user;
+    const res = await api.get<any>('/muallim/classes');
+    const rawClasses = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+    return Array.isArray(rawClasses)
+      ? rawClasses.map((c: any) => String(c.name || c).replace(/^Class\s*/i, '').trim()).filter(Boolean)
+      : [];
+  },
 
-        if (matched && Array.isArray(matched.assignedClasses) && matched.assignedClasses.length > 0) {
-          return matched.assignedClasses
-            .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-            .filter(Boolean);
-        }
-      }
-    } catch {
-      // Fallback
-    }
-
-    try {
-      const res = await api.get<any>('/muallim/classes');
-      const rawClasses = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-      if (Array.isArray(rawClasses) && rawClasses.length > 0) {
-        return rawClasses
-          .map((c: any) => String(c.name || c).replace(/^Class\s*/i, '').trim())
-          .filter(Boolean);
-      }
-    } catch {
-      // Fallback
-    }
-
-    return [];
+  async getClassAccessList(): Promise<ClassAccessItem[]> {
+    const res = await api.get<any>('/muallim/classes');
+    const rows = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+    return Array.isArray(rows)
+      ? rows.map((c: any) => ({ id: String(c.id || c._id || ''), name: String(c.name || '') })).filter((c: ClassAccessItem) => c.id && c.name)
+      : [];
   }
 };

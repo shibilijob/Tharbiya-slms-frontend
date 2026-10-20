@@ -78,6 +78,7 @@ export type ExamTerm = 'Half Yearly' | 'Annual';
 export interface AcademicAssessment {
   id: string;
   studentId: string;
+  classId?: string;
   subject: SubjectName;
   examTerm: ExamTerm;
   date: string;

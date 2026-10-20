@@ -8,7 +8,7 @@ interface AssessmentState {
   error: string | null;
 
   // Actions
-  fetchAssessments: () => Promise<AcademicAssessment[]>;
+  fetchAssessments: (classId?: string) => Promise<AcademicAssessment[]>;
   saveAssessment: (assessment: Omit<AcademicAssessment, 'id'> & { id?: string }) => Promise<AcademicAssessment>;
   setAssessments: (assessments: AcademicAssessment[]) => void;
   clearError: () => void;
@@ -28,16 +28,16 @@ export const useAssessmentStore = create<AssessmentState>((set, get) => ({
     set({ error: null });
   },
 
-  fetchAssessments: async () => {
-    set({ isLoading: true, error: null });
+  fetchAssessments: async (classId) => {
+    set({ isLoading: true, error: null, ...(classId ? { assessments: [] } : {}) });
     try {
-      const data = await assessmentService.getAll();
+      const data = await assessmentService.getAll(classId);
       set({ assessments: data, isLoading: false });
       return data;
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Failed to fetch assessments';
-      set({ error: msg, isLoading: false });
-      return get().assessments;
+      set({ error: msg, ...(classId ? { assessments: [] } : {}), isLoading: false });
+      return classId ? [] : get().assessments;
     }
   },
 

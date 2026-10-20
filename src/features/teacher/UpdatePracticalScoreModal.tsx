@@ -12,6 +12,8 @@ import { usePracticalStore, useClassStore } from '../../stores';
 import { AkhlaqCategoryMeta } from '../../data/madrasaCurriculum';
 import { AkhlaqLevel, AkhlaqRecord, AkhlaqScore } from '../../types';
 import { practicalScoreService } from '../../services/practicalScoreService';
+import { api } from '../../lib/axios';
+import { mapBackendStudentToFrontend } from '../../services/studentService';
 import { CreatePracticalCriteriaModal } from './CreatePracticalCriteriaModal';
 import {
   HeartHandshake,
@@ -35,6 +37,7 @@ interface UpdatePracticalScoreModalProps {
   initialYear?: number;
   initialSubjectId?: string;
   onUpdated?: () => void;
+  selectedClassId?: string;
 }
 
 export const UpdatePracticalScoreModal: React.FC<UpdatePracticalScoreModalProps> = ({
@@ -44,7 +47,8 @@ export const UpdatePracticalScoreModal: React.FC<UpdatePracticalScoreModalProps>
   initialMonth,
   initialYear,
   initialSubjectId,
-  onUpdated
+  onUpdated,
+  selectedClassId
 }) => {
   const { user } = useAuth();
   const { students, saveAkhlaq } = useData();
@@ -90,9 +94,29 @@ export const UpdatePracticalScoreModal: React.FC<UpdatePracticalScoreModalProps>
     return rawList.map((c: any) => String(c).replace(/^Class\s*/i, '').trim()).filter(Boolean);
   }, [teacherAssignedClasses, teacherUser]);
 
-  const teacherStudents = students.filter(s => {
+  const [selectedClassStudents, setSelectedClassStudents] = useState<typeof students>([]);
+  useEffect(() => {
+    if (user?.role !== 'SADHR_MUALLIM' || !selectedClassId || !isOpen) {
+      setSelectedClassStudents([]);
+      return;
+    }
+    let active = true;
+    setSelectedClassStudents([]);
+    api.get(`/muallim/classes/${selectedClassId}/students`).then((response) => {
+      if (!active) return;
+      const rows = Array.isArray(response.data) ? response.data : response.data?.data || [];
+      setSelectedClassStudents(rows.map((row: any) => mapBackendStudentToFrontend(row)));
+    }).catch((error) => {
+      console.error('Failed to load selected class practical roster:', error);
+      if (active) setSelectedClassStudents([]);
+    });
+    return () => { active = false; };
+  }, [user?.role, selectedClassId, isOpen]);
+  const modalStudents = user?.role === 'SADHR_MUALLIM' ? selectedClassStudents : students;
+
+  const teacherStudents = modalStudents.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-    return (rawAssigned.length > 0 && rawAssigned.includes(sClass)) ||
+    return user?.role === 'SADHR_MUALLIM' || (rawAssigned.length > 0 && rawAssigned.includes(sClass)) ||
       (user?.id && s.assignedTeacherId === user.id) ||
       (user?.name && s.teacherName === user.name);
   });
@@ -111,8 +135,16 @@ export const UpdatePracticalScoreModal: React.FC<UpdatePracticalScoreModalProps>
   // Individual category scores
   const [categoryScores, setCategoryScores] = useState<Record<string, AkhlaqScore>>({});
 
-  const selectedStudent = students.find(s => s.id === targetStudentId);
+  const selectedStudent = teacherStudents.find(s => s.id === targetStudentId);
   const currentClass = selectedStudent ? String(selectedStudent.class).replace(/^Class\s*/i, '').trim() : (rawAssigned[0] || '4');
+
+  useEffect(() => {
+    if (teacherStudents.length > 0 && !teacherStudents.some((student) => student.id === targetStudentId)) {
+      setTargetStudentId(initialStudentId && teacherStudents.some((student) => student.id === initialStudentId)
+        ? initialStudentId
+        : teacherStudents[0].id);
+    }
+  }, [teacherStudents, targetStudentId, initialStudentId]);
 
   // Load criteria list for class
   const loadCriteriaAndScores = async (cls: string = currentClass) => {
@@ -303,7 +335,7 @@ export const UpdatePracticalScoreModal: React.FC<UpdatePracticalScoreModalProps>
       };
       await saveAkhlaq(record);
 
-      const st = students.find(s => s.id === targetStudentId);
+      const st = teacherStudents.find(s => s.id === targetStudentId);
       const monthLabel = `${MONTH_NAMES[modalMonth - 1]} ${modalYear}`;
       showToast(`✓ Practical score for ${st?.name || 'Student'} (${monthLabel}) saved: ${totalEarnedMarks}/${totalMaxMarks} Marks (${overallScore}%)!`);
 

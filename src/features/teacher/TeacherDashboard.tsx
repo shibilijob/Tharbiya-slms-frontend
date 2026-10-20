@@ -10,156 +10,192 @@ import { StatCard } from '../../components/common/StatCard';
 import { UpdateTimetableModal } from './UpdateTimetableModal';
 import { UpdateSubjectsModal } from './UpdateSubjectsModal';
 import { UpdatePracticalScoreModal } from './UpdatePracticalScoreModal';
-import { useClassStore, useSubjectStore, useTimetableStore } from '../../stores';
-import { useStudentStore } from '../../stores/studentStore';
 import { muallimService } from '../../services/muallimService';
-import { MuallimUser, TimetablePeriod, MadrasaDay, Student } from '../../types';
+import { timetableService } from '../../services/timetableService';
+import { subjectService } from '../../services/subjectService';
+import { classService, ClassAccessItem } from '../../services/classService';
+import { mapBackendStudentToFrontend } from '../../services/studentService';
+import { TimetablePeriod, MadrasaDay, Student } from '../../types';
 import {
   Users,
   CalendarCheck,
   Award,
   BookOpen,
   GraduationCap,
-  Sparkles,
-  ChevronRight,
-  CheckCircle2,
-  XCircle,
-  Clock,
   ArrowRight,
-  Search,
   CalendarDays,
   BookOpenCheck,
-  Layers,
-  MapPin,
-  User as UserIcon,
-  Settings,
   HeartHandshake
 } from 'lucide-react';
-import { formatDate } from '../../utils/formatters';
+
+const EMPTY_CLASSES: string[] = [];
+const normalizeAttendanceRows = (response: any) => {
+  const rows = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []);
+  return rows.map((record: any) => ({
+    ...record,
+    studentId: String(record.studentId?._id || record.studentId?.id || record.studentId || ''),
+    date: typeof record.date === 'string' ? record.date.split('T')[0] : new Date(record.date).toISOString().split('T')[0],
+  }));
+};
 
 export const TeacherDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { students, attendance, quranRecords, remarks, achievements, markAttendance, batchMarkAttendance } = useData();
+  const { markAttendance, batchMarkAttendance } = useData();
 
-  // Zustand stores
-  const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
-  const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
-
-  const classSchedule = useTimetableStore((s) => s.classSchedule);
-  const fetchSchedule = useTimetableStore((s) => s.fetchSchedule);
-
-  const subjects = useSubjectStore((s) => s.subjects);
-  const fetchSubjects = useSubjectStore((s) => s.fetchSubjects);
-  const fetchStudents = useStudentStore((s) => s.fetchStudents);
-
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClass = searchParams.get('class') || searchParams.get('classId');
   const cleanQueryClass = useMemo(() => {
     return queryClass ? String(queryClass).replace(/^Class\s*/i, '').trim() : null;
   }, [queryClass]);
 
-  const isSadhrOrAdmin = user?.role === 'SADHR_MUALLIM' || (user as any)?.role === 'ADMIN';
-  const allSystemClasses = useClassStore((s) => s.classes);
-  const fetchClasses = useClassStore((s) => s.fetchClasses);
-  const storeSelectedClass = useClassStore((s) => s.selectedClass);
-
-  const [dashboardClass, setDashboardClass] = useState<string>(() => {
-    return cleanQueryClass || storeSelectedClass || '1';
+  const [dashboardClass, setDashboardClass] = useState('');
+  const [classAccessList, setClassAccessList] = useState<ClassAccessItem[]>([]);
+  const [classAccessLoaded, setClassAccessLoaded] = useState(false);
+  const [classAccessError, setClassAccessError] = useState<string | null>(null);
+  const [classAccessUserId, setClassAccessUserId] = useState<string | null>(null);
+  const [authorizedClasses, setAuthorizedClasses] = useState<string[]>([]);
+  const [scheduleClass, setScheduleClass] = useState('');
+  const [subjectsClass, setSubjectsClass] = useState('');
+  const [dashboardSchedule, setDashboardSchedule] = useState<Record<MadrasaDay, TimetablePeriod[]>>({
+    Sunday: [], Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: [],
   });
+  const [dashboardSubjects, setDashboardSubjects] = useState<any[]>([]);
   const [selectedDashboardDay, setSelectedDashboardDay] = useState<MadrasaDay>('Sunday');
   const [awardsGivenCount, setAwardsGivenCount] = useState<number | null>(null);
+  const [dashboardAttendance, setDashboardAttendance] = useState<any[]>([]);
+  const [dashboardStudents, setDashboardStudents] = useState<Student[]>([]);
+  const [loadedRosterKey, setLoadedRosterKey] = useState('');
+  const [loadedAttendanceKey, setLoadedAttendanceKey] = useState('');
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [loadedStatsKey, setLoadedStatsKey] = useState('');
+  const todayStr = new Date().toISOString().split('T')[0];
 
   // Modal states for Timetable, Subjects & Practical Score
   const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
   const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
   const [isPracticalScoreModalOpen, setIsPracticalScoreModalOpen] = useState(false);
 
-  // Compute teacher classes: Sadhr/Admin has access to all classes; Muallim restricted to assigned classes
-  const teacherClasses = useMemo(() => {
-    let classes: string[] = [];
+  // The backend derives this list from the authenticated user's database assignments.
+  const teacherClasses = useMemo(
+    () => user?.id && classAccessUserId === user.id ? authorizedClasses : EMPTY_CLASSES,
+    [authorizedClasses, classAccessUserId, user?.id]
+  );
+  const isSadhr = user?.role === 'SADHR_MUALLIM';
+  const isSadhrOrAdmin = user?.role === 'SADHR_MUALLIM' || (user as any)?.role === 'ADMIN';
+  const requestedClassId = searchParams.get('classId');
+  const selectedClassItem = requestedClassId ? classAccessList.find((item) => item.id === requestedClassId) : undefined;
 
-    if (isSadhrOrAdmin && allSystemClasses.length > 0) {
-      classes = allSystemClasses
-        .map((c) => String(c.name || '').replace(/^Class\s*/i, '').trim())
-        .filter(Boolean);
-    } else if (teacherAssignedClasses.length > 0) {
-      classes = [...teacherAssignedClasses];
-    } else {
-      const teacherUser = user as any;
-      let rawList: any[] = [];
-      if (Array.isArray(teacherUser?.assignedClasses)) {
-        rawList = teacherUser.assignedClasses;
-      } else if (typeof teacherUser?.assignedClasses === 'string') {
-        try {
-          const parsed = JSON.parse(teacherUser.assignedClasses);
-          rawList = Array.isArray(parsed) ? parsed : [parsed];
-        } catch {
-          rawList = [teacherUser.assignedClasses];
-        }
-      } else if (teacherUser?.assignedClass) {
-        rawList = Array.isArray(teacherUser.assignedClass) ? teacherUser.assignedClass : [teacherUser.assignedClass];
+  useEffect(() => {
+    let cancelled = false;
+    setAuthorizedClasses([]);
+    setClassAccessList([]);
+    setClassAccessLoaded(false);
+    setClassAccessError(null);
+    setClassAccessUserId(null);
+    setDashboardClass('');
+    setDashboardStudents([]);
+    if (!user) return;
+    classService.getClassAccessList().then((classes) => {
+      if (!cancelled) {
+        setClassAccessList(classes);
+        setAuthorizedClasses(classes.map((item) => item.name.replace(/^Class\s*/i, '').trim()));
+        setClassAccessLoaded(true);
+        setClassAccessUserId(user.id);
       }
-      classes = rawList
-        .map((c: any) => String(c).replace(/^Class\s*/i, '').trim())
-        .filter(Boolean);
-    }
-
-    if (cleanQueryClass && !classes.includes(cleanQueryClass)) {
-      classes = [cleanQueryClass, ...classes];
-    }
-
-    return classes.length > 0 ? classes : ['1'];
-  }, [teacherAssignedClasses, user, isSadhrOrAdmin, allSystemClasses, cleanQueryClass]);
+    }).catch((error: any) => {
+      if (!cancelled) { setClassAccessError(error?.response?.data?.message || 'Could not load classes. Please retry.'); setClassAccessLoaded(true); }
+    });
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
-    if (isSadhrOrAdmin && allSystemClasses.length === 0) {
-      fetchClasses();
+    if (isSadhr) {
+      setDashboardClass(selectedClassItem?.name.replace(/^Class\s*/i, '').trim() || '');
+    } else if (teacherClasses.length === 0) {
+      setDashboardClass('');
+    } else if (!teacherClasses.includes(dashboardClass)) {
+      const byId = requestedClassId ? classAccessList.find((item) => item.id === requestedClassId) : undefined;
+      setDashboardClass(byId ? byId.name.replace(/^Class\s*/i, '').trim() : (cleanQueryClass && teacherClasses.includes(cleanQueryClass) ? cleanQueryClass : teacherClasses[0]));
     }
-  }, [isSadhrOrAdmin, allSystemClasses.length, fetchClasses]);
+  }, [teacherClasses, dashboardClass, cleanQueryClass, classAccessList, requestedClassId, isSadhr, selectedClassItem]);
+
+  const dashboardClassId = classAccessList.find((item) => item.name.replace(/^Class\s*/i, '').trim() === dashboardClass)?.id || dashboardClass;
+  const selectedClassContextId = isSadhr ? (selectedClassItem?.id || '') : dashboardClassId;
+  const requestedClassUnavailable = Boolean(requestedClassId && classAccessLoaded && !classAccessList.some((item) => item.id === requestedClassId));
+  const missingSadhrClassContext = isSadhr && !requestedClassId;
+  const dashboardClasses = useMemo(() => isSadhr ? (selectedClassItem && dashboardClass ? [dashboardClass] : EMPTY_CLASSES) : teacherClasses, [isSadhr, selectedClassItem, dashboardClass, teacherClasses]);
+  const rosterKey = isSadhr ? selectedClassContextId : teacherClasses.map((name) => classAccessList.find((item) => item.name.replace(/^Class\s*/i, '').trim() === name)?.id || name).join(',');
+  const attendanceKey = selectedClassContextId ? `${selectedClassContextId}:${todayStr}` : '';
 
   useEffect(() => {
-    if (user) {
-      fetchAssignedClassesForTeacher(user);
-    }
-  }, [user, fetchAssignedClassesForTeacher]);
+    let cancelled = false;
+    setDashboardStudents([]);
+    setLoadedRosterKey('');
+    const rosterClasses = isSadhr ? (selectedClassItem && dashboardClass ? [dashboardClass] : []) : teacherClasses;
+    if (rosterClasses.length === 0) return;
+
+    Promise.all(rosterClasses.map((className) => muallimService.getClassRoster(classAccessList.find((item) => item.name.replace(/^Class\s*/i, '').trim() === className)?.id || className)))
+      .then((responses) => {
+        if (cancelled) return;
+        const mapped = responses.flatMap((response: any, index) => {
+          const rows = Array.isArray(response) ? response : (response?.data || []);
+          return Array.isArray(rows)
+            ? rows.map((student: any) => mapBackendStudentToFrontend(student, rosterClasses[index]))
+            : [];
+        });
+        setDashboardStudents(Array.from(new Map(mapped.map((student) => [student.id, student])).values()));
+        setLoadedRosterKey(rosterKey);
+      })
+      .catch((error) => {
+        console.error('Failed to load assigned class students:', error);
+        if (!cancelled) setDashboardStudents([]);
+      });
+
+    return () => { cancelled = true; };
+  }, [teacherClasses, classAccessList, user?.id, isSadhr, selectedClassItem, dashboardClass, rosterKey]);
 
   useEffect(() => {
-    if (cleanQueryClass) {
-      setDashboardClass(cleanQueryClass);
-    }
-  }, [cleanQueryClass]);
-
-  useEffect(() => {
-    if (teacherClasses.length > 0 && !teacherClasses.includes(dashboardClass)) {
-      setDashboardClass(cleanQueryClass && teacherClasses.includes(cleanQueryClass) ? cleanQueryClass : teacherClasses[0]);
-    }
-  }, [teacherClasses, dashboardClass, cleanQueryClass]);
-
-  useEffect(() => {
-    fetchStudents();
-  }, [fetchStudents]);
-
-  useEffect(() => {
-    if (teacherClasses.length > 0 && !teacherClasses.includes(dashboardClass)) return;
-    fetchSchedule(dashboardClass);
-    fetchSubjects(dashboardClass);
-  }, [dashboardClass, teacherClasses, fetchSchedule, fetchSubjects]);
+    if (!dashboardClass || !dashboardClasses.includes(dashboardClass)) return;
+    let cancelled = false;
+    setScheduleClass('');
+    setSubjectsClass('');
+    setDashboardSchedule({ Sunday: [], Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: [] });
+    setDashboardSubjects([]);
+    Promise.all([
+      timetableService.fetchClassScheduleFromApi(selectedClassContextId),
+      subjectService.fetchFromApi(selectedClassContextId),
+    ]).then(([schedule, classSubjects]) => {
+      if (!cancelled) {
+        setDashboardSchedule(schedule);
+        setDashboardSubjects(classSubjects);
+        setScheduleClass(dashboardClass);
+        setSubjectsClass(dashboardClass);
+      }
+    }).catch((error) => console.error('Failed to load assigned class dashboard data:', error));
+    return () => { cancelled = true; };
+  }, [dashboardClass, selectedClassContextId, dashboardClasses]);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadAwardsGivenCount = async () => {
+      setAwardsGivenCount(null);
       if (!user?.id) {
         setAwardsGivenCount(null);
         return;
       }
 
       try {
-        const stats = await muallimService.getDashboard();
+        if (isSadhr && !selectedClassContextId) return;
+        setLoadedStatsKey('');
+        const response = await muallimService.getDashboard(isSadhr ? selectedClassContextId : undefined);
+        const stats = response?.data || response;
         if (isMounted) {
+          setDashboardStats(stats);
           setAwardsGivenCount(
             typeof stats?.awardsGivenCount === 'number' ? stats.awardsGivenCount : null
           );
+          setLoadedStatsKey(isSadhr ? selectedClassContextId : user.id);
         }
       } catch (err) {
         console.error('Failed to load Muallim award badge count:', err);
@@ -174,73 +210,129 @@ export const TeacherDashboard: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user?.id, achievements.length]);
-
-  const todaySchedule = classSchedule[selectedDashboardDay] || [];
-  const activeSubjectsCount = subjects.length;
-
-  // Accumulate and preserve assigned students across all assigned classes
-  const [allAssignedStudents, setAllAssignedStudents] = useState<Student[]>([]);
+  }, [user?.id, isSadhr, selectedClassContextId]);
 
   useEffect(() => {
-    if (students.length > 0) {
-      setAllAssignedStudents((prev) => {
-        const studentMap = new Map<string, Student>();
-        prev.forEach((s) => studentMap.set(s.id, s));
-        students.forEach((s) => {
-          const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-          if (teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id)) {
-            studentMap.set(s.id, s);
-          }
-        });
-        return Array.from(studentMap.values());
-      });
-    }
-  }, [students, teacherClasses, user]);
-
-  // Total students across all assigned classes for this teacher
-  const teacherStudents = useMemo(() => {
-    if (allAssignedStudents.length > 0) return allAssignedStudents;
-    return students.filter(s => {
-      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-      return teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
+    let isMounted = true;
+    setDashboardAttendance([]);
+    setLoadedAttendanceKey('');
+    if (!selectedClassContextId || !dashboardClass) return () => { isMounted = false; };
+    muallimService.getClassAttendance(selectedClassContextId, todayStr).then((response: any) => {
+      if (isMounted) {
+        setDashboardAttendance(normalizeAttendanceRows(response));
+        setLoadedAttendanceKey(attendanceKey);
+      }
+    }).catch((error) => {
+      console.error('Failed to load selected class attendance:', error);
+      if (isMounted) setDashboardAttendance([]);
     });
-  }, [allAssignedStudents, students, teacherClasses, user]);
+    return () => { isMounted = false; };
+  }, [selectedClassContextId, dashboardClass, todayStr, attendanceKey]);
+
+  const todaySchedule = scheduleClass === dashboardClass ? (dashboardSchedule[selectedDashboardDay] || []) : [];
+  const activeSubjectsCount = subjectsClass === dashboardClass ? dashboardSubjects.length : 0;
+
+  const refreshDashboardClass = async () => {
+    const [schedule, classSubjects] = await Promise.all([
+      timetableService.fetchClassScheduleFromApi(dashboardClassId),
+      subjectService.fetchFromApi(dashboardClassId),
+    ]);
+    setDashboardSchedule(schedule);
+    setDashboardSubjects(classSubjects);
+    setScheduleClass(dashboardClass);
+    setSubjectsClass(dashboardClass);
+  };
+
+  // Accumulate and preserve assigned students across all assigned classes
+  // Keep the dashboard's student set derived from the current authorized classes;
+  // do not accumulate rows across accounts or prior assignment changes.
+  const teacherStudents = useMemo(() => {
+    if (loadedRosterKey !== rosterKey) return [];
+    return dashboardStudents.filter(s => {
+      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+      return dashboardClasses.includes(sClass);
+    });
+  }, [dashboardStudents, dashboardClasses, loadedRosterKey, rosterKey]);
 
   // Students for the currently selected class tab (for today's register table)
   const classStudents = useMemo(() => {
-    const pool = teacherStudents.length > 0 ? teacherStudents : students;
-    return pool.filter(s => {
+    return teacherStudents.filter(s => {
       const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
       return sClass === dashboardClass;
     });
-  }, [teacherStudents, students, dashboardClass]);
+  }, [teacherStudents, dashboardClass]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayAttendance = attendance.filter(a => a.date === todayStr);
+  const todayAttendance = loadedAttendanceKey === attendanceKey ? dashboardAttendance : [];
 
   const [markingSuccess, setMarkingSuccess] = useState(false);
 
   // Dynamic Statistics based ONLY on this teacher's assigned students (Real Data)
-  const totalStudentsCount = teacherStudents.length;
+  const totalStudentsCount = loadedStatsKey === (isSadhr ? selectedClassContextId : user?.id) && typeof dashboardStats?.totalAssignedStudents === 'number'
+    ? dashboardStats.totalAssignedStudents
+    : classStudents.length;
   const presentTodayCount = todayAttendance.filter(a =>
-    a.status === 'PRESENT' && teacherStudents.some(s => s.id === a.studentId)
+    a.status === 'PRESENT' && classStudents.some(s => s.id === a.studentId)
   ).length;
 
   // Quick mark all present for today
   const handleMarkAllPresent = async () => {
-    const targetStudents = classStudents.length > 0 ? classStudents : teacherStudents;
+    const targetStudents = isSadhr ? classStudents : (classStudents.length > 0 ? classStudents : teacherStudents);
     const updates = targetStudents.map(s => ({
       studentId: s.id,
       date: todayStr,
       status: 'PRESENT' as const
     }));
-    const targetClassId = dashboardClass || teacherClasses[0];
+    const targetClassId = selectedClassContextId;
     if (!user?.id || !targetClassId) return;
     await batchMarkAttendance(updates, user.id, targetClassId);
+    const refreshed = await muallimService.getClassAttendance(targetClassId, todayStr);
+    setDashboardAttendance(normalizeAttendanceRows(refreshed));
+    setLoadedAttendanceKey(attendanceKey);
     setMarkingSuccess(true);
     setTimeout(() => setMarkingSuccess(false), 3000);
   };
+
+  const handleStudentAttendance = async (student: Student, status: 'PRESENT' | 'LEAVE' | 'ABSENT' | 'HOLIDAY') => {
+    if (!user?.id || !selectedClassContextId || !classStudents.some((row) => row.id === student.id)) return;
+    await markAttendance(student.id, todayStr, status, user.id, undefined, selectedClassContextId);
+    const refreshed = await muallimService.getClassAttendance(selectedClassContextId, todayStr);
+    setDashboardAttendance(normalizeAttendanceRows(refreshed));
+    setLoadedAttendanceKey(attendanceKey);
+  };
+
+  if (!classAccessLoaded) {
+    return <Card className="p-8 text-center"><div className="w-8 h-8 border-3 border-[#DDEDE5] border-t-[#0F6B50] rounded-full animate-spin mx-auto mb-3" /><p className="text-sm text-[#667085]">Loading your class access…</p></Card>;
+  }
+
+  if (classAccessError) {
+    return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Could not load classes</h1><p className="mt-2 text-sm text-[#667085]">{classAccessError}</p><Button className="mt-4" onClick={() => window.location.reload()}>Retry</Button></Card>;
+  }
+
+  if (teacherClasses.length === 0) {
+    return (
+      <div className="space-y-6">
+        <Card className="p-8 text-center">
+          <h1 className="text-xl font-extrabold text-[#1F2933]">{user?.role === 'SADHR_MUALLIM' ? 'No active classes available' : 'No classes assigned'}</h1>
+          <p className="mt-2 text-sm text-[#667085]">
+            {user?.role === 'SADHR_MUALLIM' ? 'Class Management will show classes when active classes are available.' : 'Your Muallim workspace will show class information after the administration assigns one or more classes to your account.'}
+          </p>
+          {isSadhrOrAdmin && (
+            <Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">
+              Back to Class Management
+            </Link>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  if (requestedClassUnavailable) {
+    return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Class unavailable</h1><p className="mt-2 text-sm text-[#667085]">This class is inactive or you are not authorized to open it.</p><Link to={user?.role === 'SADHR_MUALLIM' ? '/admin/classes' : '/teacher/dashboard'} className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Back to Class Management</Link></Card>;
+  }
+
+  if (missingSadhrClassContext) {
+    return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Choose a class</h1><p className="mt-2 text-sm text-[#667085]">Open a class from Class Management to view its dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
+  }
 
   return (
     <div className="space-y-6">
@@ -258,11 +350,7 @@ export const TeacherDashboard: React.FC = () => {
               Class {dashboardClass} Workspace • Darunnajath Mundambra
             </p>
             <p className="text-xs text-[#DDEDE5]/80">
-              {isSadhrOrAdmin ? (
-                <>Managing Class: <strong className="text-white">Class {dashboardClass}</strong> (Sadhr Administration)</>
-              ) : (
-                <>Assigned Classes: <strong className="text-white">{teacherClasses.map(c => `Class ${c}`).join(', ') || `Class ${dashboardClass}`}</strong></>
-              )}
+              <>{isSadhr ? 'Selected Class' : 'Assigned Classes'}: <strong className="text-white">{isSadhr ? `Class ${dashboardClass}` : teacherClasses.map(c => `Class ${c}`).join(', ')}</strong></>
             </p>
           </div>
 
@@ -273,7 +361,7 @@ export const TeacherDashboard: React.FC = () => {
                 className="px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-extrabold text-xs flex items-center gap-2 border border-white/20 transition-all shadow-xs"
               >
                 <ArrowRight className="w-4 h-4 rotate-180" />
-                Back to Classes
+                Back to Class Management
               </Link>
             )}
             <button
@@ -298,11 +386,9 @@ export const TeacherDashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="Total Students"
-          value={totalStudentsCount}
+          value={isSadhr ? classStudents.length : totalStudentsCount}
           sublabel={
-            isSadhrOrAdmin
-              ? 'Across all institutional classes'
-              : `Assigned in ${teacherClasses.map(c => `Class ${c}`).join(' & ') || `Class ${dashboardClass}`}`
+              `${isSadhr ? 'Selected class' : 'Assigned in'} ${dashboardClasses.map(c => `Class ${c}`).join(' & ') || 'no classes'}`
           }
           icon={<Users className="w-5 h-5" />}
         />
@@ -331,18 +417,22 @@ export const TeacherDashboard: React.FC = () => {
               Class {dashboardClass} Attendance Register (Today)
             </h3>
             <p className="text-xs text-[#667085] mt-0.5">
-              Quickly record or toggle attendance for your assigned students
+              Quickly record or toggle attendance for Class {dashboardClass} students
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {/* Show tabs only for assigned classes */}
-            {teacherClasses.length > 1 ? (
+            {!isSadhr && teacherClasses.length > 1 ? (
               <div className="flex bg-[#FAF8F2] border border-[#E3EAE6] p-1 rounded-xl max-w-full overflow-x-auto">
                 {teacherClasses.map(cls => (
                   <button
                     key={cls}
-                    onClick={() => setDashboardClass(cls)}
+                    onClick={() => {
+                      setDashboardClass(cls);
+                      const selected = classAccessList.find((item) => item.name.replace(/^Class\s*/i, '').trim() === cls);
+                      setSearchParams(selected ? { classId: selected.id } : { class: cls });
+                    }}
                     className={`px-3 py-1 text-xs font-bold rounded-lg transition-all shrink-0 ${dashboardClass === cls ? 'bg-[#0F6B50] text-white shadow-xs' : 'text-[#667085] hover:text-[#1F2933]'
                       }`}
                   >
@@ -352,7 +442,7 @@ export const TeacherDashboard: React.FC = () => {
               </div>
             ) : (
               <span className="px-3 py-1 bg-[#DDEDE5] text-[#084C3A] text-xs font-extrabold rounded-xl border border-[#0F6B50]/20">
-                Class {teacherClasses[0] || dashboardClass}
+                Class {dashboardClass}
               </span>
             )}
 
@@ -363,7 +453,7 @@ export const TeacherDashboard: React.FC = () => {
             >
               {markingSuccess ? "✓ Marked All Present!" : "One-Tap: Mark All Present"}
             </Button>
-            <Link to="/teacher/attendance">
+            <Link to={`/teacher/attendance${isSadhr ? `?classId=${encodeURIComponent(selectedClassContextId)}` : ''}`}>
               <Button size="sm" variant="outline">
                 Full Register
               </Button>
@@ -397,7 +487,7 @@ export const TeacherDashboard: React.FC = () => {
 
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'PRESENT', user.id, undefined, student.class)}
+                      onClick={() => void handleStudentAttendance(student, 'PRESENT')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'PRESENT'
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-white text-[#667085] hover:bg-emerald-100'
@@ -407,7 +497,7 @@ export const TeacherDashboard: React.FC = () => {
                       P
                     </button>
                     <button
-                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'LEAVE', user.id, undefined, student.class)}
+                      onClick={() => void handleStudentAttendance(student, 'LEAVE')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'LEAVE'
                         ? 'bg-amber-500 text-white shadow-xs'
                         : 'bg-white text-[#667085] hover:bg-amber-100'
@@ -417,7 +507,7 @@ export const TeacherDashboard: React.FC = () => {
                       L
                     </button>
                     <button
-                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'ABSENT', user.id, undefined, student.class)}
+                      onClick={() => void handleStudentAttendance(student, 'ABSENT')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'ABSENT'
                         ? 'bg-rose-600 text-white shadow-xs'
                         : 'bg-white text-[#667085] hover:bg-rose-100'
@@ -427,7 +517,7 @@ export const TeacherDashboard: React.FC = () => {
                       A
                     </button>
                     <button
-                      onClick={() => user?.id && markAttendance(student.id, todayStr, 'HOLIDAY', user.id, undefined, student.class)}
+                      onClick={() => void handleStudentAttendance(student, 'HOLIDAY')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'HOLIDAY'
                         ? 'bg-slate-600 text-white shadow-xs'
                         : 'bg-white text-[#667085] hover:bg-slate-100'
@@ -587,22 +677,22 @@ export const TeacherDashboard: React.FC = () => {
             <p className="text-[10px] text-[#667085] mt-0.5">Curriculum & Malayalam titles</p>
           </button>
 
-          <Link to="/teacher/assessments" className="p-4 rounded-2xl bg-[#DDEDE5]/40 hover:bg-[#DDEDE5] border border-[#bbdcd0] transition-all group">
+          <Link to={`/teacher/assessments${isSadhr ? `?classId=${encodeURIComponent(selectedClassContextId)}` : ''}`} className="p-4 rounded-2xl bg-[#DDEDE5]/40 hover:bg-[#DDEDE5] border border-[#bbdcd0] transition-all group">
             <GraduationCap className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
             <p className="text-xs font-bold text-[#084C3A]">Enter Assessment Marks</p>
             <p className="text-[10px] text-[#0F6B50] mt-0.5">Exam grades & test scoring</p>
           </Link>
 
-          <Link to="/teacher/quran" className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#FBF4DE] border border-[#C9A227]/30 transition-all group">
+          <Link to={`/teacher/quran${isSadhr ? `?classId=${encodeURIComponent(selectedClassContextId)}` : ''}`} className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#FBF4DE] border border-[#C9A227]/30 transition-all group">
             <BookOpen className="w-6 h-6 text-[#C9A227] mb-2 group-hover:scale-105 transition-transform" />
             <p className="text-xs font-bold text-[#1F2933]">Update Sabaq & Hifz</p>
             <p className="text-[10px] text-[#667085] mt-0.5">Surah, Ayahs & Tajweed</p>
           </Link>
 
-          <Link to="/teacher/students" className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/30 border border-[#E3EAE6] transition-all group">
+          <Link to={`/teacher/students${isSadhr ? `?classId=${encodeURIComponent(selectedClassContextId)}` : ''}`} className="p-4 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/30 border border-[#E3EAE6] transition-all group">
             <Users className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
             <p className="text-xs font-bold text-[#1F2933]">Student Dossiers</p>
-            <p className="text-[10px] text-[#667085] mt-0.5">View all {totalStudentsCount} assigned students</p>
+            <p className="text-[10px] text-[#667085] mt-0.5">View all {totalStudentsCount} students in {isSadhr ? `Class ${dashboardClass}` : 'your assigned classes'}</p>
           </Link>
         </div>
       </Card>
@@ -612,11 +702,8 @@ export const TeacherDashboard: React.FC = () => {
         isOpen={isTimetableModalOpen}
         onClose={() => setIsTimetableModalOpen(false)}
         initialClass={dashboardClass}
-        assignedClasses={teacherClasses}
-        onUpdated={() => {
-          fetchSchedule(dashboardClass);
-          fetchSubjects(dashboardClass);
-        }}
+        assignedClasses={dashboardClasses}
+        onUpdated={() => { void refreshDashboardClass(); }}
       />
 
       {/* Subjects Modal */}
@@ -624,17 +711,15 @@ export const TeacherDashboard: React.FC = () => {
         isOpen={isSubjectsModalOpen}
         onClose={() => setIsSubjectsModalOpen(false)}
         initialClass={dashboardClass}
-        assignedClasses={teacherClasses}
-        onUpdated={() => {
-          fetchSchedule(dashboardClass);
-          fetchSubjects(dashboardClass);
-        }}
+        assignedClasses={dashboardClasses}
+        onUpdated={() => { void refreshDashboardClass(); }}
       />
 
       {/* Practical Score Modal */}
       <UpdatePracticalScoreModal
         isOpen={isPracticalScoreModalOpen}
         onClose={() => setIsPracticalScoreModalOpen(false)}
+        selectedClassId={isSadhr ? selectedClassContextId : undefined}
       />
     </div>
   );

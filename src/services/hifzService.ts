@@ -108,8 +108,9 @@ export const hifzService = {
       if (!res) return null;
       const payload = res?.data !== undefined ? res.data : res;
       if (!payload) return null;
-      if (typeof payload === 'object' && ('id' in payload || '_id' in payload || 'criteria' in payload)) {
-        return payload as HifzTarget;
+      const target = (payload as any)?.data ?? payload;
+      if (target && typeof target === 'object' && ('id' in target || '_id' in target || 'criteria' in target)) {
+        return target as HifzTarget;
       }
       return null;
     } catch {
@@ -120,13 +121,13 @@ export const hifzService = {
   async createTarget(data: CreateHifzTargetInput): Promise<HifzTarget> {
     const res = await api.post<HifzTarget>('/hifz/targets', data);
     const payload = res?.data !== undefined ? res.data : res;
-    return payload as HifzTarget;
+    return ((payload as any)?.data ?? payload) as HifzTarget;
   },
 
   async updateTarget(id: string, data: Partial<CreateHifzTargetInput>): Promise<HifzTarget> {
     const res = await api.patch<HifzTarget>(`/hifz/targets/${id}`, data);
     const payload = res?.data !== undefined ? res.data : res;
-    return payload as HifzTarget;
+    return ((payload as any)?.data ?? payload) as HifzTarget;
   },
 
   async deleteTarget(id: string): Promise<void> {
@@ -146,13 +147,13 @@ export const hifzService = {
   async createRecord(data: CreateHifzRecordInput): Promise<HifzRecord> {
     const res = await api.post<HifzRecord>('/hifz/records', data);
     const payload = res?.data !== undefined ? res.data : res;
-    return payload as HifzRecord;
+    return ((payload as any)?.data ?? payload) as HifzRecord;
   },
 
   async updateRecord(id: string, data: Partial<CreateHifzRecordInput>): Promise<HifzRecord> {
     const res = await api.patch<HifzRecord>(`/hifz/records/${id}`, data);
     const payload = res?.data !== undefined ? res.data : res;
-    return payload as HifzRecord;
+    return ((payload as any)?.data ?? payload) as HifzRecord;
   },
 
   async deleteRecord(id: string): Promise<void> {
