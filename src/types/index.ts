@@ -64,6 +64,46 @@ export interface AttendanceRecord {
   markedByTeacherId: string;
 }
 
+export interface MonthlyAttendanceBacklogRecord {
+  id?: string;
+  _id?: string;
+  studentId: any;
+  classId: string;
+  year: number;
+  month: number;
+  monthName?: string;
+  totalWorkingDays: number;
+  attendedDays: number;
+}
+
+export interface SaveMonthlyBacklogPayload {
+  classId: string;
+  year: number;
+  month: number;
+  monthName?: string;
+  totalWorkingDays: number;
+  studentsData: Array<{
+    studentId: string;
+    attendedDays: number;
+  }>;
+}
+
+export interface StudentAttendanceCardStat {
+  studentId: string;
+  currentMonth: string; // e.g. "21/24"
+  prevMonths: string;   // e.g. "22/25"
+  totalAttendance: string; // e.g. "43/49"
+  currentMonthPercent?: number;
+  prevMonthsPercent?: number;
+  totalPercent?: number;
+  currentAttended?: number;
+  currentWorking?: number;
+  prevAttended?: number;
+  prevWorking?: number;
+  totalAttended?: number;
+  totalWorking?: number;
+}
+
 export type SubjectName =
   | 'Quran'
   | 'Hifz'
@@ -84,7 +124,7 @@ export interface AcademicAssessment {
   date: string;
   maxMarks: number;
   obtainedMarks: number;
-  grade: 'A+' | 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D';
+  grade: 'A++' | 'A+' | 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D' | string;
   remarks?: string;
   teacherId: string;
 }
