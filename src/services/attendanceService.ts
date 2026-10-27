@@ -1,4 +1,10 @@
-import { AttendanceRecord, AttendanceStatus } from '../types';
+import {
+  AttendanceRecord,
+  AttendanceStatus,
+  MonthlyAttendanceBacklogRecord,
+  SaveMonthlyBacklogPayload,
+  StudentAttendanceCardStat,
+} from '../types';
 import { api } from '../lib/axios';
 import { useStudentStore } from '../stores/studentStore';
 
@@ -190,4 +196,49 @@ export const attendanceService = {
     );
     return verified;
   },
+
+  /**
+   * Save monthly attendance backlog entries for a class
+   */
+  async saveMonthlyBacklog(payload: SaveMonthlyBacklogPayload): Promise<any> {
+    const res = await api.post('/attendance/backlog/save-month', payload);
+    return res.data;
+  },
+
+  /**
+   * Fetch existing monthly attendance backlog entries for a class
+   */
+  async fetchMonthlyBacklog(
+    classId: string,
+    year?: number,
+    month?: number
+  ): Promise<MonthlyAttendanceBacklogRecord[]> {
+    const params: Record<string, any> = {};
+    if (year) params.year = year;
+    if (month) params.month = month;
+    const res = await api.get(`/attendance/backlog/class/${classId}`, { params });
+    return res.data?.records || res.data?.data || [];
+  },
+
+  /**
+   * Fetch combined card badge statistics for a class (currentMonth, prevMonths, totalAttendance)
+   */
+  async fetchClassAttendanceStats(
+    classId: string,
+    date?: string
+  ): Promise<Record<string, StudentAttendanceCardStat>> {
+    const params: Record<string, any> = {};
+    if (date) params.date = date;
+    const res: any = await api.get(`/attendance/stats/class/${classId}`, { params });
+    // api.get already unwraps axios res.data. Backend returns { success: true, data: stats, stats: stats }
+    const stats = (res && typeof res === 'object' && res.stats && typeof res.stats === 'object')
+      ? res.stats
+      : (res && typeof res === 'object' && res.data && typeof res.data === 'object')
+      ? res.data
+      : (res && typeof res === 'object')
+      ? res
+      : {};
+    return stats;
+  },
 };
+

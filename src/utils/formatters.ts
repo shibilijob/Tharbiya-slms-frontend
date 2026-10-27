@@ -9,6 +9,7 @@ import {
   StudentGoal,
   StudentSummary
 } from '../types';
+import { getGradeColor } from './gradeCalculator';
 
 export function formatDate(dateString?: string): string {
   if (!dateString) return '—';
@@ -115,8 +116,5 @@ export function getStatusBadgeClass(status: string): string {
 }
 
 export function getGradeBadgeClass(grade: string): string {
-  if (grade.startsWith('A')) return 'bg-[#DDEDE5] text-[#084C3A] font-bold';
-  if (grade.startsWith('B')) return 'bg-blue-50 text-blue-800 font-bold';
-  if (grade.startsWith('C')) return 'bg-amber-50 text-amber-800 font-semibold';
-  return 'bg-rose-50 text-rose-800 font-semibold';
+  return getGradeColor(grade);
 }

@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Calendar,
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
 import { useClassStore } from '../../stores';
@@ -26,6 +27,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { classService, ClassAccessItem } from '../../services/classService';
 import { api } from '../../lib/axios';
 import { mapBackendStudentToFrontend } from '../../services/studentService';
+import { MonthlyBacklogModal } from './MonthlyBacklogModal';
 
 export const AttendanceBatchMarker: React.FC = () => {
   const { user } = useAuth();
@@ -50,6 +52,12 @@ export const AttendanceBatchMarker: React.FC = () => {
   const [loadedAttendanceKey, setLoadedAttendanceKey] = useState('');
   const [selectedClassAttendance, setSelectedClassAttendance] = useState<typeof attendance>([]);
   const [holidayDraftKey, setHolidayDraftKey] = useState('');
+  const [isBacklogModalOpen, setIsBacklogModalOpen] = useState(false);
+
+  const studentAttendanceStats = useAttendanceStore((s) => s.studentAttendanceStats);
+  const fetchClassAttendanceStats = useAttendanceStore((s) => s.fetchClassAttendanceStats);
+  const updateOptimisticAttendanceStat = useAttendanceStore((s) => s.updateOptimisticAttendanceStat);
+  const batchUpdateOptimisticAttendanceStats = useAttendanceStore((s) => s.batchUpdateOptimisticAttendanceStats);
 
   const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
   const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
@@ -190,6 +198,22 @@ export const AttendanceBatchMarker: React.FC = () => {
     return () => { active = false; };
   }, [selectedDate, selectedClass, teacherClasses, isSadhr, selectedClassAccess]);
 
+  // Fetch card badge statistics (Current Month, Prev Months, Total)
+  useEffect(() => {
+    if (isSadhr && !selectedClassAccess) return;
+    const classesToFetch = isSadhr
+      ? (selectedClassAccess?.id ? [selectedClassAccess.id] : [])
+      : selectedClass !== 'ALL'
+      ? [selectedClass]
+      : teacherClasses;
+
+    if (classesToFetch.length > 0) {
+      classesToFetch.forEach((c) => {
+        fetchClassAttendanceStats(c, selectedDate);
+      });
+    }
+  }, [selectedDate, selectedClass, teacherClasses, isSadhr, selectedClassAccess, fetchClassAttendanceStats]);
+
   const [attendanceState, setAttendanceState] = useState<Record<string, { status: AttendanceStatus; remarks: string }>>({});
 
   // Sync attendance state when date, attendance records, or students change
@@ -215,6 +239,9 @@ export const AttendanceBatchMarker: React.FC = () => {
   }, [selectedDate, attendance, selectedClassAttendance, isSadhr, teacherStudents]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
+    const oldStatus = attendanceState[studentId]?.status || 'PRESENT';
+    if (oldStatus === status) return;
+
     setAttendanceState(prev => ({
       ...prev,
       [studentId]: {
@@ -222,22 +249,21 @@ export const AttendanceBatchMarker: React.FC = () => {
         status
       }
     }));
-  };
 
-  const handleRemarkChange = (studentId: string, remarks: string) => {
-    setAttendanceState(prev => ({
-      ...prev,
-      [studentId]: {
-        ...prev[studentId],
-        remarks
-      }
-    }));
+    // Option A: Responsively update badge counts in real time
+    updateOptimisticAttendanceStat(studentId, oldStatus, status);
   };
 
   const handleMarkAll = (status: AttendanceStatus) => {
+    const updates: Array<{ studentId: string; oldStatus: AttendanceStatus; newStatus: AttendanceStatus }> = [];
+
     setAttendanceState(prev => {
       const updated = { ...prev };
       filteredStudents.forEach(s => {
+        const oldStatus = prev[s.id]?.status || 'PRESENT';
+        if (oldStatus !== status) {
+          updates.push({ studentId: s.id, oldStatus, newStatus: status });
+        }
         updated[s.id] = {
           status,
           remarks: updated[s.id]?.remarks || ''
@@ -245,6 +271,11 @@ export const AttendanceBatchMarker: React.FC = () => {
       });
       return updated;
     });
+
+    if (updates.length > 0) {
+      batchUpdateOptimisticAttendanceStats(updates);
+    }
+
     const label = status === 'PRESENT' ? 'Present' : status === 'LEAVE' ? 'Leave' : status === 'HOLIDAY' ? 'Holiday' : 'Absent';
     showToast(`Marked ${filteredStudents.length} students as ${label}`);
   };
@@ -269,9 +300,14 @@ export const AttendanceBatchMarker: React.FC = () => {
     try {
       // Allow the disabled/loading state to render before updating the full roster.
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      const updates: Array<{ studentId: string; oldStatus: AttendanceStatus; newStatus: AttendanceStatus }> = [];
       setAttendanceState((prev) => {
         const updated = { ...prev };
         teacherStudents.forEach((student) => {
+          const oldStatus = prev[student.id]?.status || 'PRESENT';
+          if (oldStatus !== 'HOLIDAY') {
+            updates.push({ studentId: student.id, oldStatus, newStatus: 'HOLIDAY' });
+          }
           updated[student.id] = {
             status: 'HOLIDAY',
             remarks: updated[student.id]?.remarks || '',
@@ -279,6 +315,9 @@ export const AttendanceBatchMarker: React.FC = () => {
         });
         return updated;
       });
+      if (updates.length > 0) {
+        batchUpdateOptimisticAttendanceStats(updates);
+      }
       setHolidayDraftKey(holidayActionKey);
       setIsHolidayConfirmationOpen(false);
       showToast(`Holiday marked for all ${teacherStudents.length} students in ${classLabel}. Save Register to persist.`);
@@ -323,6 +362,18 @@ export const AttendanceBatchMarker: React.FC = () => {
         setSelectedClassAttendance(savedRecords);
         setLoadedAttendanceKey(registerKey);
       }
+
+      // Option B: Post-save re-fetch of stats query for all active classes
+      const classesToRefresh = isSadhr
+        ? (selectedClassAccess?.id ? [selectedClassAccess.id] : [])
+        : selectedClass !== 'ALL'
+        ? [selectedClass]
+        : teacherClasses;
+
+      await Promise.all(
+        classesToRefresh.map((clsId) => fetchClassAttendanceStats(clsId, selectedDate))
+      );
+
       if (holidayDraftKey === holidayActionKey) setHolidayDraftKey('');
       const classLabel = selectedClass === 'ALL' ? teacherClasses.map(c => `Class ${c}`).join(' & ') : `Class ${selectedClass}`;
       showToast(`✓ Attendance register for ${classLabel} (${formatDate(selectedDate)}) saved successfully!`);
@@ -334,6 +385,18 @@ export const AttendanceBatchMarker: React.FC = () => {
       setIsSaving(false);
     }
   };
+
+  const backlogClassId = isSadhr
+    ? selectedClassAccess?.id || ''
+    : selectedClass !== 'ALL'
+    ? selectedClass
+    : teacherClasses[0] || '';
+
+  const backlogClassName = isSadhr
+    ? selectedClassAccess?.name || `Class ${selectedClass}`
+    : selectedClass !== 'ALL'
+    ? `Class ${selectedClass}`
+    : `Class ${teacherClasses[0] || ''}`;
 
   if (isSadhr && !selectedClassId) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Choose a class</h1><p className="mt-2 text-sm text-[#667085]">Open the attendance register from a selected class dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
   if (isSadhr && selectedClassId && !classAccessLoaded) return <Card className="p-8 text-center">Loading selected class attendance…</Card>;
@@ -357,6 +420,8 @@ export const AttendanceBatchMarker: React.FC = () => {
   const absentCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'ABSENT').length;
   const leaveCount = filteredStudents.filter(s => attendanceState[s.id]?.status === 'LEAVE').length;
 
+  console.log("Student Stats in Store:", studentAttendanceStats);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -375,6 +440,17 @@ export const AttendanceBatchMarker: React.FC = () => {
           </p>
         </div>
 
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsBacklogModalOpen(true)}
+            leftIcon={<Calendar className="w-4 h-4 text-[#0F6B50]" />}
+            className="shadow-xs bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border-[#E3EAE6] text-[#0F6B50] font-bold"
+          >
+            Monthly Backlog
+          </Button>
+        </div>
       </div>
 
       {/* Select Class & Filter Controls */}
@@ -486,33 +562,62 @@ export const AttendanceBatchMarker: React.FC = () => {
         <div className="space-y-3">
           {filteredStudents.map(student => {
             const current = attendanceState[student.id] || { status: 'PRESENT', remarks: '' };
+            const studentKey = String(student.id || (student as any)._id || '');
+            const cardStat =
+              studentAttendanceStats[studentKey] ||
+              (student.id ? studentAttendanceStats[student.id] : undefined) ||
+              ((student as any)._id ? studentAttendanceStats[(student as any)._id] : undefined);
 
             return (
-              <Card key={student.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-[#0F6B50] transition-colors">
-                <div className="flex items-center gap-3">
-                  <Avatar name={student.name} gender={student.gender} size="md" />
-                  <div>
-                    <h4 className="text-sm font-bold text-[#1F2933]">{student.name}</h4>
-                    <p className="font-malayalam text-xs text-[#0F6B50] font-semibold">{student.malayalamName}</p>
-                    <p className="text-[10px] text-[#667085]">Class {student.class} • Adm: {student.admissionNo}</p>
+              <Card key={student.id} className="p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:border-[#0F6B50] transition-colors">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={student.name} gender={student.gender} size="md" />
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-extrabold text-[#1F2933] uppercase tracking-wide truncate">
+                        {student.name}
+                      </h4>
+                      {student.malayalamName && (
+                        <p className="font-malayalam text-xs text-[#0F6B50] font-semibold truncate">
+                          {student.malayalamName}
+                        </p>
+                      )}
+                      <p className="text-[10px] text-[#667085] truncate">
+                        Class {student.class} • Adm: {student.admissionNo}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Attendance Badges */}
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    {/* CURRENT MONTH */}
+                    <div className="px-2.5 py-3 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200/70 text-[11px] font-bold flex items-center gap-1 shadow-2xs">
+                      <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-wide">Current Month:</span>
+                      <span className="font-extrabold text-emerald-950">{cardStat?.currentMonth || '0/0'}</span>
+                    </div>
+
+                    {/* PREV MONTHS */}
+                    <div className="px-2.5 py-3 rounded-xl bg-blue-50 text-blue-900 border border-blue-200/70 text-[11px] font-bold flex items-center gap-1 shadow-2xs">
+                      <span className="text-[9px] font-bold text-blue-700 uppercase tracking-wide">Prev Months:</span>
+                      <span className="font-extrabold text-blue-950">{cardStat?.prevMonths || '0/0'}</span>
+                    </div>
+
+                    {/* TOTAL ATTENDANCE */}
+                    <div className="px-2.5 py-3 rounded-xl bg-gray-100 text-slate-700 border border-slate-200/70 text-[11px] font-bold flex items-center gap-1 shadow-2xs">
+                      <span className="text-[9px] font-bold text-slate-600 uppercase tracking-wide">Total:</span>
+                      <span className="font-extrabold text-slate-900">{cardStat?.totalAttendance || '0/0'}</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Status Toggle & Note Input */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                  <input
-                    type="text"
-                    placeholder="Optional remark (e.g. sick leave)..."
-                    value={current.remarks}
-                    onChange={(e) => handleRemarkChange(student.id, e.target.value)}
-                    className="w-full sm:w-56 px-3 py-1.5 text-xs rounded-xl border border-[#E3EAE6] bg-[#FAF8F2] text-[#1F2933] focus:border-[#0F6B50] outline-none"
-                  />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
 
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleStatusChange(student.id, 'PRESENT')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'PRESENT' || !current.status
                           ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30'
                           : 'bg-[#FAF8F2] text-[#667085] hover:bg-emerald-50'
@@ -524,7 +629,7 @@ export const AttendanceBatchMarker: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleStatusChange(student.id, 'ABSENT')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'ABSENT'
                           ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-600/30'
                           : 'bg-[#FAF8F2] text-[#667085] hover:bg-rose-50'
@@ -536,7 +641,7 @@ export const AttendanceBatchMarker: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleStatusChange(student.id, 'LEAVE')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'LEAVE'
                           ? 'bg-amber-500 text-white shadow-sm ring-2 ring-amber-500/30'
                           : 'bg-[#FAF8F2] text-[#667085] hover:bg-amber-50'
@@ -548,7 +653,7 @@ export const AttendanceBatchMarker: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleStatusChange(student.id, 'HOLIDAY')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'HOLIDAY'
                           ? 'bg-slate-600 text-white shadow-sm ring-2 ring-slate-600/30'
                           : 'bg-[#FAF8F2] text-[#667085] hover:bg-slate-100'
@@ -584,6 +689,24 @@ export const AttendanceBatchMarker: React.FC = () => {
         cancelText="Cancel"
         confirmText="Confirm"
         isLoading={isApplyingHoliday}
+      />
+      <MonthlyBacklogModal
+        isOpen={isBacklogModalOpen}
+        onClose={() => setIsBacklogModalOpen(false)}
+        classId={backlogClassId}
+        className={backlogClassName}
+        students={teacherStudents}
+        onSaved={() => {
+          const classesToRefresh = isSadhr
+            ? (selectedClassAccess?.id ? [selectedClassAccess.id] : [])
+            : selectedClass !== 'ALL'
+            ? [selectedClass]
+            : teacherClasses;
+
+          classesToRefresh.forEach((clsId) => {
+            fetchClassAttendanceStats(clsId, selectedDate);
+          });
+        }}
       />
     </div>
   );

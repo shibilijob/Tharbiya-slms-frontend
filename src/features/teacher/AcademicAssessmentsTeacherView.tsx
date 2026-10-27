@@ -29,6 +29,8 @@ import {
 import { formatDate, getGradeBadgeClass } from '../../utils/formatters';
 import { Link, useSearchParams } from 'react-router-dom';
 import { classService, ClassAccessItem } from '../../services/classService';
+import { AssessmentMarkEntryModal } from './AssessmentMarkEntryModal';
+import { calculateGradeFromMarks } from '../../utils/gradeCalculator';
 
 const normalizeClassValue = (value?: string) =>
   String(value || '').replace(/^Class\s*/i, '').trim();
@@ -43,9 +45,9 @@ const subjectBelongsToClass = (subject: SubjectMeta, classValue: string) => {
 
 export const AcademicAssessmentsTeacherView: React.FC = () => {
   const { user } = useAuth();
-  const { students, assessments, saveAssessment } = useData();
+  const { students, assessments } = useData();
   const fetchAssessments = useAssessmentStore((s) => s.fetchAssessments);
-  const { showToast, pushNotification } = useNotifications();
+  const { showToast } = useNotifications();
   const [searchParams] = useSearchParams();
   const selectedClassId = searchParams.get('classId') || '';
   const isSadhr = user?.role === 'SADHR_MUALLIM';
@@ -73,7 +75,6 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
       const selected = classes.find((item) => item.id === selectedClassId) || null;
       setSelectedClassAccess(selected);
       setSelectedClassFilter(selected?.name.replace(/^Class\s*/i, '').trim() || '');
-      setFormClass(selected?.name.replace(/^Class\s*/i, '').trim() || '');
       setClassAccessLoaded(true);
     }).catch(() => { if (active) setClassAccessLoaded(true); });
     return () => { active = false; };
@@ -125,7 +126,6 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
 
   // Subjects list from service for the active class filter
   const [subjectsList, setSubjectsList] = useState<SubjectMeta[]>([]);
-  const [modalSubjects, setModalSubjects] = useState<SubjectMeta[]>([]);
 
   // Filter toolbar state
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('');
@@ -161,37 +161,11 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     }
   }, [teacherClasses, selectedClassFilter, isSadhr]);
 
-  // Modal form state
-  const [formClass, setFormClass] = useState<string>(teacherClasses[0] || '5');
-  const [targetStudentId, setTargetStudentId] = useState(teacherStudents[0]?.id || '');
-  const [formSubject, setFormSubject] = useState<string>('Quran');
-  const [formExamTerm, setFormExamTerm] = useState<ExamTerm>('Half Yearly');
-  const [formMarks, setFormMarks] = useState('90');
-  const [formMaxMarks, setFormMaxMarks] = useState('100');
-  const [formGrade, setFormGrade] = useState<'A+' | 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D'>('A+');
-  const [formRemarks, setFormRemarks] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  // Assessment Mark Entry Modal state
+  const [modalInitialStudentId, setModalInitialStudentId] = useState<string>('');
+  const [modalInitialClass, setModalInitialClass] = useState<string>('');
+  const [modalInitialTerm, setModalInitialTerm] = useState<ExamTerm>('Half Yearly');
 
-  // Auto calculate grade from marks
-  const computeGrade = (obtained: number, max: number): 'A+' | 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D' => {
-    if (!max || max <= 0) return 'A+';
-    const ratio = obtained / max;
-    if (ratio >= 0.9) return 'A+';
-    if (ratio >= 0.8) return 'A';
-    if (ratio >= 0.7) return 'B+';
-    if (ratio >= 0.6) return 'B';
-    if (ratio >= 0.5) return 'C+';
-    if (ratio >= 0.4) return 'C';
-    return 'D';
-  };
-
-  const handleMarksChange = (marksVal: string, maxMarksVal: string) => {
-    setFormMarks(marksVal);
-    setFormMaxMarks(maxMarksVal);
-    const ob = parseInt(marksVal) || 0;
-    const mx = parseInt(maxMarksVal) || 100;
-    setFormGrade(computeGrade(ob, mx));
-  };
 
   // Filter students for marksheet view
   const filteredStudents = teacherStudents.filter(s => {
@@ -202,132 +176,22 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     return matchesClass && matchesSearch;
   });
 
-  // Filter students for modal dropdown based on formClass
-  const modalClassStudents = teacherStudents.filter(
-    s => normalizeClassValue(s.class) === normalizeClassValue(formClass)
-  );
-
-  const handleOpenAddModal = (studentId?: string, subject?: string, term?: ExamTerm) => {
-    const student = studentId ? teacherStudents.find(s => s.id === studentId) : teacherStudents[0];
-    const initialClass = student?.class || selectedClassFilter || (teacherClasses[0] || '5');
-    const initialStudentId = studentId || teacherStudents.find(
-      s => normalizeClassValue(s.class) === normalizeClassValue(initialClass)
-    )?.id || teacherStudents[0]?.id || '';
-    const initialSub = (subject && subject !== 'All') ? subject : (selectedSubject !== 'All' ? selectedSubject : (subjectsList[0]?.id || 'Quran'));
-    const initialTerm = term || selectedTerm;
-
-    setFormClass(initialClass);
-    setTargetStudentId(initialStudentId);
-    setFormSubject(initialSub);
-    setFormExamTerm(initialTerm);
-    useSubjectStore.getState().fetchSubjects(initialClass).then((list) => {
-      const classSubjects = (list || []).filter((subject) =>
-        subjectBelongsToClass(subject, initialClass)
-      );
-      setModalSubjects(classSubjects);
-      if (classSubjects.length > 0 && !classSubjects.some(s => s.id === initialSub || s.name === initialSub)) {
-        setFormSubject(classSubjects[0].id);
-      }
-    });
-
-    // Check if existing record exists
-    const existing = assessments.find(
-      a => a.studentId === initialStudentId && a.subject === initialSub && a.examTerm === initialTerm
-    );
-
-    if (existing) {
-      setFormMarks(String(existing.obtainedMarks));
-      setFormMaxMarks(String(existing.maxMarks));
-      setFormGrade(existing.grade);
-      setFormRemarks(existing.remarks || '');
-    } else {
-      setFormMarks('');
-      setFormMaxMarks('100');
-      setFormGrade('A');
-      setFormRemarks('');
-    }
-
+  const handleOpenAddModal = (studentId?: string, _subject?: string, term?: ExamTerm) => {
+    const student = studentId ? teacherStudents.find(s => s.id === studentId) : undefined;
+    const initialClass = student ? normalizeClassValue(student.class) : (selectedClassFilter || teacherClasses[0] || '5');
+    setModalInitialClass(initialClass);
+    setModalInitialStudentId(studentId || '');
+    setModalInitialTerm(term || selectedTerm);
     setIsModalOpen(true);
   };
 
-  // When class changes inside modal, sync student selection and load class subjects
-  const handleModalClassChange = (newClass: string) => {
-    setFormClass(newClass);
-    useSubjectStore.getState().fetchSubjects(newClass).then((list) => {
-      const classSubjects = (list || []).filter((subject) =>
-        subjectBelongsToClass(subject, newClass)
-      );
-      setModalSubjects(classSubjects);
-      if (classSubjects.length > 0) {
-        if (!classSubjects.some(s => s.id === formSubject || s.name === formSubject)) {
-          setFormSubject(classSubjects[0].id);
-        }
-      }
-    });
-    const firstInClass = teacherStudents.find(
-      s => normalizeClassValue(s.class) === normalizeClassValue(newClass)
-    );
-    if (firstInClass) {
-      setTargetStudentId(firstInClass.id);
-      syncExistingRecord(firstInClass.id, formSubject, formExamTerm);
-    }
-  };
-
-  // When student, subject, or term changes inside modal, check if record exists and prefill
-  const syncExistingRecord = (stId: string, sub: string, term: ExamTerm) => {
-    const existing = assessments.find(
-      a => a.studentId === stId && a.subject === sub && a.examTerm === term
-    );
-    if (existing) {
-      setFormMarks(String(existing.obtainedMarks));
-      setFormMaxMarks(String(existing.maxMarks));
-      setFormGrade(existing.grade);
-      setFormRemarks(existing.remarks || '');
-    }
-  };
-
-  const handleSaveAssessmentForm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!targetStudentId || !user?.id) return;
-
-    setIsSaving(true);
-    try {
-      const marksNum = parseInt(formMarks) || 0;
-      const maxMarksNum = parseInt(formMaxMarks) || 100;
-
-      await saveAssessment({
-        studentId: targetStudentId,
-        classId: isSadhr ? selectedClassAccess!.id : formClass,
-        subject: formSubject as SubjectName,
-        examTerm: formExamTerm,
-        date: new Date().toISOString().split('T')[0],
-        maxMarks: maxMarksNum,
-        obtainedMarks: marksNum,
-        grade: formGrade,
-        remarks: formRemarks || undefined,
-        teacherId: user.id
-      });
-
-      const st = teacherStudents.find(s => s.id === targetStudentId);
-      showToast(`✓ ${formSubject} (${formExamTerm}) marks saved for ${st?.name || 'Student'}`);
-
-      // Push notification to parent
-      if (st) {
-        await pushNotification({
-          userId: st.parentId,
-          title: "New Assessment Marks Published",
-          message: `${formSubject} ${formExamTerm} marks entered for ${st.name}: ${marksNum}/${maxMarksNum} (Grade ${formGrade})`,
-          category: "ASSESSMENT",
-          actionUrl: "/parent/progress"
-        });
-      }
-
-      setIsModalOpen(false);
-    } catch (e: any) {
-      console.error("Failed to save assessment", e);
-      showToast(e?.response?.data?.message || e?.message || 'Failed to save assessment marks');
-    } finally {
-      setIsSaving(false);
+  const handleModalSaved = () => {
+    if (isSadhr && selectedClassAccess) {
+      void fetchAssessments(selectedClassAccess.id);
+    } else if (selectedClassFilter) {
+      void fetchAssessments(selectedClassFilter);
+    } else if (teacherClasses[0]) {
+      void fetchAssessments(teacherClasses[0]);
     }
   };
 
@@ -345,7 +209,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     });
 
     const percent = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
-    const overallGrade = computeGrade(totalEarned, totalMax);
+    const overallGrade = calculateGradeFromMarks(totalEarned, totalMax).grade;
 
     return {
       evaluatedCount: studentRecords.length,
@@ -630,148 +494,19 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
         })}
       </div>
 
-      {/* Add / Edit Assessment Mark Modal with Class, Student, Subject, Exam Term */}
-      <Modal
+      {/* Multi-Subject Mark Entry Modal for Single Student */}
+      <AssessmentMarkEntryModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Add / Update Assessment Mark"
-        subtitle="Record official examination score & Usthad academic evaluation"
-        maxWidth="lg"
-      >
-        <form onSubmit={handleSaveAssessmentForm} className="space-y-4">
-          {/* Row 1: Class and Student Selection */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-1">
-              <Select
-                label="Class"
-                value={formClass}
-                onChange={(e) => handleModalClassChange(e.target.value)}
-              >
-                {teacherClasses.map(c => (
-                  <option key={c} value={c}>
-                    Class {c}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div className="sm:col-span-2">
-              <Select
-                label="Select Student"
-                value={targetStudentId}
-                onChange={(e) => {
-                  setTargetStudentId(e.target.value);
-                  syncExistingRecord(e.target.value, formSubject, formExamTerm);
-                }}
-              >
-                {modalClassStudents.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} (Class {s.class}) - Adm: {s.admissionNo}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-
-          {/* Row 2: Subject and Exam Term Selection */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Subject"
-              value={formSubject}
-              onChange={(e) => {
-                setFormSubject(e.target.value);
-                syncExistingRecord(targetStudentId, e.target.value, formExamTerm);
-              }}
-            >
-              {(modalSubjects.length > 0 ? modalSubjects : subjectsList).map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.malayalamName})
-                </option>
-              ))}
-            </Select>
-
-            <Select
-              label="Exam Term"
-              value={formExamTerm}
-              onChange={(e) => {
-                const termVal = e.target.value as ExamTerm;
-                setFormExamTerm(termVal);
-                syncExistingRecord(targetStudentId, formSubject, termVal);
-              }}
-            >
-              {EXAM_TERMS.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.title} ({t.titleMalayalam})
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          {/* Row 3: Obtained Marks, Max Marks, and Auto-Grade */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <Input
-                label="Obtained Marks"
-                type="number"
-                min={0}
-                max={parseInt(formMaxMarks) || 100}
-                value={formMarks}
-                onChange={(e) => handleMarksChange(e.target.value, formMaxMarks)}
-                required
-              />
-            </div>
-            <div>
-              <Input
-                label="Max Marks"
-                type="number"
-                min={1}
-                max={500}
-                value={formMaxMarks}
-                onChange={(e) => handleMarksChange(formMarks, e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <Select
-                label="Calculated Grade"
-                value={formGrade}
-                onChange={(e) => setFormGrade(e.target.value as any)}
-              >
-                <option value="A+">A+ (90-100%)</option>
-                <option value="A">A (80-89%)</option>
-                <option value="B+">B+ (70-79%)</option>
-                <option value="B">B (60-69%)</option>
-                <option value="C+">C+ (50-59%)</option>
-                <option value="C">C (40-49%)</option>
-                <option value="D">D (&lt;40%)</option>
-              </Select>
-            </div>
-          </div>
-
-          {/* Row 4: Remarks */}
-          <div>
-            <label className="block text-xs font-bold text-[#1F2933] uppercase tracking-wider mb-1.5">
-              Usthad Remarks & Observations
-            </label>
-            <textarea
-              rows={2}
-              value={formRemarks}
-              onChange={(e) => setFormRemarks(e.target.value)}
-              placeholder="e.g. Excellent recitation, sound understanding of rules..."
-              className="w-full rounded-xl border border-[#E3EAE6] bg-white p-3 text-xs text-[#1F2933] focus:border-[#0F6B50] outline-none"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-[#E3EAE6]">
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" size="sm" isLoading={isSaving}>
-              Save Assessment
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        initialClass={modalInitialClass}
+        initialStudentId={modalInitialStudentId}
+        initialTerm={modalInitialTerm}
+        teacherClasses={teacherClasses}
+        allStudents={teacherStudents}
+        isSadhr={isSadhr}
+        selectedClassAccess={selectedClassAccess}
+        onSaved={handleModalSaved}
+      />
     </div>
   );
 };
