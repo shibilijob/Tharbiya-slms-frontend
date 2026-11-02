@@ -37,8 +37,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         syncSessionUser(session.user);
       }
     }
-    setIsLoading(isPending);
-  }, [session, isPending]);
+    // Only toggle global blocking loading during initial startup when no user is loaded yet
+    if (!user) {
+      setIsLoading(isPending);
+    } else if (!isPending) {
+      setIsLoading(false);
+    }
+  }, [session, isPending, user]);
 
   // Sync faculty profile from live MongoDB data on startup
   useEffect(() => {

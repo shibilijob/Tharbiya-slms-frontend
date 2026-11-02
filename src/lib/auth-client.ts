@@ -20,6 +20,9 @@ export interface BetterAuthCustomUser {
 
 export const authClient = createAuthClient({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000",
+  sessionOptions: {
+    refetchOnWindowFocus: false,
+  },
   plugins: [
     usernameClient(),
   ],

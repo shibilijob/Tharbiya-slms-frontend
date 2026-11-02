@@ -8,7 +8,7 @@ import { Student } from '../../types';
 import { api } from '../../lib/axios';
 import { useAttendanceStore } from '../../stores/attendanceStore';
 import { useNotifications } from '../../context/NotificationContext';
-import { Calendar, Save, CheckCheck, RotateCcw } from 'lucide-react';
+import { Save, CheckCheck, RotateCcw } from 'lucide-react';
 
 interface MonthlyBacklogModalProps {
   isOpen: boolean;
