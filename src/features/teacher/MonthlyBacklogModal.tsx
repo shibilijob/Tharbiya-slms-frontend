@@ -5,6 +5,7 @@ import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
 import { Avatar } from '../../components/common/Avatar';
 import { Student } from '../../types';
+import { api } from '../../lib/axios';
 import { useAttendanceStore } from '../../stores/attendanceStore';
 import { useNotifications } from '../../context/NotificationContext';
 import { Calendar, Save, CheckCheck, RotateCcw } from 'lucide-react';
@@ -43,7 +44,6 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
 }) => {
   const { showToast } = useNotifications();
   const saveMonthlyBacklog = useAttendanceStore((s) => s.saveMonthlyBacklog);
-  const fetchMonthlyBacklog = useAttendanceStore((s) => s.fetchMonthlyBacklog);
 
   const currentDate = new Date();
   // Default to previous month if not January
@@ -64,41 +64,94 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
     let active = true;
     setIsLoadingExisting(true);
 
-    fetchMonthlyBacklog(classId, selectedYear, selectedMonth)
-      .then((records) => {
-        if (!active) return;
-        const map: Record<string, number> = {};
-        let foundWorkingDays = 24;
-
-        if (records && records.length > 0) {
-          foundWorkingDays = records[0].totalWorkingDays || 24;
-          records.forEach((r) => {
-            const sId = typeof r.studentId === 'object' && r.studentId ? (r.studentId._id || r.studentId.id) : String(r.studentId);
-            map[sId] = r.attendedDays;
+    const loadExistingBacklog = async () => {
+      try {
+        let res: any;
+        try {
+          res = await api.get(`/attendance/backlog/class/${classId}`, {
+            params: { year: selectedYear, month: selectedMonth },
+          });
+        } catch {
+          res = await api.get(`/attendance/backlog/${classId}`, {
+            params: { year: selectedYear, month: selectedMonth },
           });
         }
 
-        // Initialize any student not in the backlog with default working days
-        students.forEach((s) => {
-          if (map[s.id] === undefined) {
-            map[s.id] = foundWorkingDays;
-          }
-        });
+        if (!active) return;
 
-        setTotalWorkingDays(foundWorkingDays);
-        setStudentAttendedMap(map);
-      })
-      .catch((err) => {
+        const records: any[] = Array.isArray(res)
+          ? res
+          : Array.isArray(res?.records)
+          ? res.records
+          : Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res?.data?.records)
+          ? res.data.records
+          : [];
+
+        if (records && records.length > 0) {
+          const foundWorkingDays = records[0].totalWorkingDays || 24;
+          setTotalWorkingDays(foundWorkingDays);
+
+          const map: Record<string, number> = {};
+          records.forEach((r: any) => {
+            const sId =
+              typeof r.studentId === 'object' && r.studentId
+                ? String(r.studentId._id || r.studentId.id)
+                : String(r.studentId);
+            const attended = typeof r.attendedDays === 'number' ? r.attendedDays : foundWorkingDays;
+            map[sId] = attended;
+
+            const matchedStudent = students.find(
+              (s) => String(s.id) === sId || String((s as any)._id) === sId
+            );
+            if (matchedStudent) {
+              map[matchedStudent.id] = attended;
+              if ((matchedStudent as any)._id) {
+                map[String((matchedStudent as any)._id)] = attended;
+              }
+            }
+          });
+
+          // Initialize any student not in the backlog with default working days
+          students.forEach((s) => {
+            if (map[s.id] === undefined) {
+              map[s.id] = foundWorkingDays;
+            }
+          });
+
+          setStudentAttendedMap(map);
+        } else {
+          // If no records exist, fallback to the default 24 days
+          setTotalWorkingDays(24);
+          const map: Record<string, number> = {};
+          students.forEach((s) => {
+            map[s.id] = 24;
+          });
+          setStudentAttendedMap(map);
+        }
+      } catch (err) {
+        if (!active) return;
         console.error('Failed to load existing backlog:', err);
-      })
-      .finally(() => {
-        if (active) setIsLoadingExisting(false);
-      });
+        setTotalWorkingDays(24);
+        const map: Record<string, number> = {};
+        students.forEach((s) => {
+          map[s.id] = 24;
+        });
+        setStudentAttendedMap(map);
+      } finally {
+        if (active) {
+          setIsLoadingExisting(false);
+        }
+      }
+    };
+
+    loadExistingBacklog();
 
     return () => {
       active = false;
     };
-  }, [isOpen, classId, selectedYear, selectedMonth, students, fetchMonthlyBacklog]);
+  }, [isOpen, classId, selectedYear, selectedMonth, students]);
 
   const handleAttendedChange = (studentId: string, val: string) => {
     const num = val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0);
