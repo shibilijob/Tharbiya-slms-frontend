@@ -104,6 +104,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="parents" element={<ParentManagerView />} />
         <Route path="classes" element={<ClassManagerView />} />
         <Route path="reports" element={<ReportsCenterView />} />
+        <Route path="result" element={<ReportsCenterView />} />
       </Route>
 
       {/* Fallback */}

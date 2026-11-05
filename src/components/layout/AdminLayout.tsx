@@ -30,7 +30,7 @@ export const AdminLayout: React.FC = () => {
     { label: 'Overview', path: '/admin/dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Students', path: '/admin/students', icon: <GraduationCap className="w-5 h-5" /> },
     { label: 'Muallims', path: '/admin/teachers', icon: <Users className="w-5 h-5" /> },
-    { label: 'Reports', path: '/admin/reports', icon: <FileSpreadsheet className="w-5 h-5" /> },
+    { label: 'Result', path: '/admin/reports', icon: <FileSpreadsheet className="w-5 h-5" /> },
   ];
 
   // Full Navigation list
@@ -40,7 +40,7 @@ export const AdminLayout: React.FC = () => {
     { label: 'Muallim Management', path: '/admin/teachers', icon: <Users className="w-4 h-4" /> },
     { label: 'Parent Management', path: '/admin/parents', icon: <UserSquare2 className="w-4 h-4" /> },
     { label: 'Class Management', path: '/admin/classes', icon: <Layers className="w-4 h-4" /> },
-    { label: 'Reports Center', path: '/admin/reports', icon: <FileSpreadsheet className="w-4 h-4" /> }
+    { label: 'Result', path: '/admin/reports', icon: <FileSpreadsheet className="w-4 h-4" /> }
   ];
 
   const moreMenuItems = [

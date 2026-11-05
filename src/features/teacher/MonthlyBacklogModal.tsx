@@ -294,7 +294,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
             <button
               type="button"
               onClick={handleResetAllZero}
-              className="text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+              className="text-[#E11D48] hover:text-[#BE123C] font-bold flex items-center gap-1 hover:underline cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" /> Clear All
             </button>

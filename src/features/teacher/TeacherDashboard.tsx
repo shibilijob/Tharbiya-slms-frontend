@@ -9,7 +9,7 @@ import { Avatar } from '../../components/common/Avatar';
 import { StatCard } from '../../components/common/StatCard';
 import { UpdateTimetableModal } from './UpdateTimetableModal';
 import { UpdateSubjectsModal } from './UpdateSubjectsModal';
-import { UpdatePracticalScoreModal } from './UpdatePracticalScoreModal';
+import { BulkPracticalScoreModal } from './BulkPracticalScoreModal';
 import { muallimService } from '../../services/muallimService';
 import { timetableService } from '../../services/timetableService';
 import { subjectService } from '../../services/subjectService';
@@ -489,8 +489,8 @@ export const TeacherDashboard: React.FC = () => {
                     <button
                       onClick={() => void handleStudentAttendance(student, 'PRESENT')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'PRESENT'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-white text-[#667085] hover:bg-emerald-100'
+                        ? 'bg-[#059669] text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-[#D1FAE5]'
                         }`}
                       title="Present"
                     >
@@ -499,8 +499,8 @@ export const TeacherDashboard: React.FC = () => {
                     <button
                       onClick={() => void handleStudentAttendance(student, 'LEAVE')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'LEAVE'
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : 'bg-white text-[#667085] hover:bg-amber-100'
+                        ? 'bg-[#F59E0B] text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-[#FEF3C7]'
                         }`}
                       title="Leave"
                     >
@@ -509,8 +509,8 @@ export const TeacherDashboard: React.FC = () => {
                     <button
                       onClick={() => void handleStudentAttendance(student, 'ABSENT')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'ABSENT'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-white text-[#667085] hover:bg-rose-100'
+                        ? 'bg-[#E11D48] text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-[#FFE4E6]'
                         }`}
                       title="Absent"
                     >
@@ -519,8 +519,8 @@ export const TeacherDashboard: React.FC = () => {
                     <button
                       onClick={() => void handleStudentAttendance(student, 'HOLIDAY')}
                       className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${status === 'HOLIDAY'
-                        ? 'bg-slate-600 text-white shadow-xs'
-                        : 'bg-white text-[#667085] hover:bg-slate-100'
+                        ? 'bg-[#475569] text-white shadow-xs'
+                        : 'bg-white text-[#667085] hover:bg-[#F1F5F9]'
                         }`}
                       title="Holiday"
                     >
@@ -716,10 +716,14 @@ export const TeacherDashboard: React.FC = () => {
       />
 
       {/* Practical Score Modal */}
-      <UpdatePracticalScoreModal
+      <BulkPracticalScoreModal
         isOpen={isPracticalScoreModalOpen}
         onClose={() => setIsPracticalScoreModalOpen(false)}
         selectedClassId={isSadhr ? selectedClassContextId : undefined}
+        assignedClasses={teacherClasses}
+        initialClass={dashboardClass || teacherClasses[0]}
+        isSadhr={isSadhr}
+        selectedClassAccess={selectedClassItem}
       />
     </div>
   );

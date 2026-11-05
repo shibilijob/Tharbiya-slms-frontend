@@ -47,6 +47,33 @@ const getCacheKey = (classId: string, practicalSubjectId: string | undefined, ye
   return `practical_scores_${cleanClass}_${subj}_${year}_${m}`;
 };
 
+/**
+ * Normalizes API response which might be wrapped as:
+ * - PracticalScore[]
+ * - { success: boolean, data: PracticalScore[] }
+ * - { data: { success: boolean, data: PracticalScore[] } }
+ */
+const normalizeList = (res: any): PracticalScore[] => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res?.data?.data)) return res.data.data;
+  return [];
+};
+
+/**
+ * Normalizes single score API response
+ */
+const normalizeObj = (res: any): PracticalScore => {
+  if (!res) return {} as PracticalScore;
+  if (res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+    if (res.data.data && typeof res.data.data === 'object' && !Array.isArray(res.data.data)) {
+      return res.data.data;
+    }
+    return res.data;
+  }
+  return res;
+};
+
 export const practicalScoreService = {
   /**
    * Fetch monthly scores for a class, subject, month, and year from MongoDB backend
@@ -63,11 +90,11 @@ export const practicalScoreService = {
     }
 
     try {
-      const res = await api.get<{ success: boolean; data: PracticalScore[] }>("/muallim/practical-scores", {
+      const res = await api.get<PracticalScore[]>("/muallim/practical-scores", {
         params: queryParams,
       });
 
-      const scores = Array.isArray(res.data?.data) ? res.data.data : [];
+      const scores = normalizeList(res);
 
       // Update cache
       try {
@@ -106,12 +133,12 @@ export const practicalScoreService = {
       score: Number(payload.score),
     };
 
-    const res = await api.post<{ success: boolean; data: PracticalScore }>(
+    const res = await api.post<PracticalScore>(
       "/muallim/practical-scores",
       cleanPayload
     );
 
-    const saved = res.data.data;
+    const saved = normalizeObj(res);
 
     // Invalidate/update cache
     try {
@@ -144,13 +171,53 @@ export const practicalScoreService = {
   },
 
   /**
+   * Bulk record scores for multiple students & practical subjects in a class for a month
+   */
+  async recordBulkMonthlyScores(payload: {
+    classId: string;
+    month: number;
+    year: number;
+    entries: Array<{
+      studentId: string;
+      practicalSubjectId: string;
+      score: number;
+      remarks?: string;
+    }>;
+  }): Promise<PracticalScore[]> {
+    const cleanClass = String(payload.classId).replace(/^Class\s*/i, "").trim();
+    const cleanPayload = {
+      ...payload,
+      classId: cleanClass,
+      month: Number(payload.month),
+      year: Number(payload.year),
+    };
+
+    const res = await api.post<PracticalScore[]>(
+      "/muallim/practical-scores/bulk",
+      cleanPayload
+    );
+
+    const savedList = normalizeList(res);
+
+    // Invalidate/refresh local cache for this month & class
+    try {
+      const cacheKey = getCacheKey(cleanClass, "ALL", payload.year, payload.month);
+      localStorage.setItem(cacheKey, JSON.stringify(savedList));
+    } catch (e) {
+      console.warn("Failed to update bulk practical scores cache", e);
+    }
+
+    return savedList;
+  },
+
+  /**
    * Get student's monthly history across all months
    */
   async getStudentHistory(studentId: string): Promise<PracticalScore[]> {
-    const res = await api.get<{ success: boolean; data: PracticalScore[] }>(
+    const res = await api.get<PracticalScore[]>(
       `/muallim/practical-scores/student/${studentId}/history`
     );
-    return Array.isArray(res.data?.data) ? res.data.data : [];
+    return normalizeList(res);
   },
 
   /**

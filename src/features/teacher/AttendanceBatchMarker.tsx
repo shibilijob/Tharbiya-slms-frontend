@@ -446,7 +446,7 @@ export const AttendanceBatchMarker: React.FC = () => {
             variant="outline"
             onClick={() => setIsBacklogModalOpen(true)}
             leftIcon={<Calendar className="w-4 h-4 text-[#0F6B50]" />}
-            className="shadow-xs bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border-[#E3EAE6] text-[#0F6B50] font-bold"
+            className="shadow-xs bg-[#FAF8F2] hover:bg-[#EEF6F2] border-[#E3EAE6] text-[#0F6B50] font-bold"
           >
             Monthly Backlog
           </Button>
@@ -619,8 +619,8 @@ export const AttendanceBatchMarker: React.FC = () => {
                       onClick={() => handleStatusChange(student.id, 'PRESENT')}
                       className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'PRESENT' || !current.status
-                          ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30'
-                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-emerald-50'
+                          ? 'bg-[#059669] text-white shadow-sm ring-2 ring-[#0596694D]'
+                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-[#ECFDF5]'
                       }`}
                     >
                       Present
@@ -631,8 +631,8 @@ export const AttendanceBatchMarker: React.FC = () => {
                       onClick={() => handleStatusChange(student.id, 'ABSENT')}
                       className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'ABSENT'
-                          ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-600/30'
-                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-rose-50'
+                          ? 'bg-[#E11D48] text-white shadow-sm ring-2 ring-[#E11D484D]'
+                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-[#FFF1F2]'
                       }`}
                     >
                       Absent
@@ -643,8 +643,8 @@ export const AttendanceBatchMarker: React.FC = () => {
                       onClick={() => handleStatusChange(student.id, 'LEAVE')}
                       className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'LEAVE'
-                          ? 'bg-amber-500 text-white shadow-sm ring-2 ring-amber-500/30'
-                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-amber-50'
+                          ? 'bg-[#F59E0B] text-white shadow-sm ring-2 ring-[#F59E0B4D]'
+                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-[#FFFBEB]'
                       }`}
                     >
                       Leave
@@ -655,8 +655,8 @@ export const AttendanceBatchMarker: React.FC = () => {
                       onClick={() => handleStatusChange(student.id, 'HOLIDAY')}
                       className={`flex-1 sm:flex-none px-3.5 py-1.5 rounded-full text-xs font-black transition-all ${
                         current.status === 'HOLIDAY'
-                          ? 'bg-slate-600 text-white shadow-sm ring-2 ring-slate-600/30'
-                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-slate-100'
+                          ? 'bg-[#475569] text-white shadow-sm ring-2 ring-[#4755694D]'
+                          : 'bg-[#FAF8F2] text-[#667085] hover:bg-[#F1F5F9]'
                       }`}
                     >
                       Holiday
