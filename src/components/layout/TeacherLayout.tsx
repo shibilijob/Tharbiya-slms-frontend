@@ -23,7 +23,7 @@ import { Toast } from '../feedback/Toast';
 import { Logo } from '../common/Logo';
 import { UpdateTimetableModal } from '../../features/teacher/UpdateTimetableModal';
 import { UpdateSubjectsModal } from '../../features/teacher/UpdateSubjectsModal';
-import { UpdatePracticalScoreModal } from '../../features/teacher/UpdatePracticalScoreModal';
+import { BulkPracticalScoreModal } from '../../features/teacher/BulkPracticalScoreModal';
 
 import { useData } from '../../context/DataContext';
 import { useClassStore } from '../../stores';
@@ -471,10 +471,14 @@ export const TeacherLayout: React.FC = () => {
         initialClass={selectedClassName || scopedTeacherClasses[0]}
       />
 
-      <UpdatePracticalScoreModal
+      <BulkPracticalScoreModal
         isOpen={isPracticalScoreModalOpen}
         onClose={() => setIsPracticalScoreModalOpen(false)}
         selectedClassId={isSadhr ? selectedClassId : undefined}
+        assignedClasses={scopedTeacherClasses}
+        initialClass={selectedClassName || scopedTeacherClasses[0]}
+        isSadhr={isSadhr}
+        selectedClassAccess={selectedClass}
       />
 
       <Toast />

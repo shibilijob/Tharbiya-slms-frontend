@@ -11,7 +11,7 @@ import { Select } from '../../components/common/Select';
 import { Avatar } from '../../components/common/Avatar';
 import { ACHIEVEMENT_BADGES } from '../../data/madrasaCurriculum';
 import { AchievementCategory } from '../../types';
-import { UpdatePracticalScoreModal } from './UpdatePracticalScoreModal';
+import { BulkPracticalScoreModal } from './BulkPracticalScoreModal';
 import { CreatePracticalCriteriaModal } from './CreatePracticalCriteriaModal';
 import {
   HeartHandshake,
@@ -208,7 +208,7 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const handleOpenPracticalScore = (studentId?: string) => {
-    if (studentId) setSelectedPracticalStudentId(studentId);
+    setSelectedPracticalStudentId(studentId || '');
     setIsPracticalScoreModalOpen(true);
   };
 
@@ -311,7 +311,7 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
             leftIcon={<HeartHandshake className="w-4 h-4" />}
             className="shadow-sm shadow-[#0F6B50]/20"
           >
-            Update Practical Score
+            Bulk Enter Scores
           </Button>
           <Button
             size="md"
@@ -449,7 +449,7 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
                   leftIcon={<Edit2 className="w-3.5 h-3.5" />}
                   className="text-xs"
                 >
-                  Enter Scores
+                  Bulk Enter Scores
                 </Button>
               </div>
             </div>
@@ -610,16 +610,24 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
         </div>
       </div>
 
-      {/* Practical Score Modal (Month-Aware) */}
-      <UpdatePracticalScoreModal
+      {/* Bulk Practical Score Modal (Month & Multi-Subject Aware) */}
+      <BulkPracticalScoreModal
         isOpen={isPracticalScoreModalOpen}
         onClose={() => setIsPracticalScoreModalOpen(false)}
         initialStudentId={selectedPracticalStudentId}
-        selectedClassId={isSadhr ? selectedClassId : undefined}
+        initialClass={selectedClass !== 'ALL' ? selectedClass : teacherClasses[0] || '5'}
         initialMonth={selectedMonth}
         initialYear={selectedYear}
         initialSubjectId={selectedPracticalSubjectId !== 'ALL' ? selectedPracticalSubjectId : undefined}
-        onUpdated={() => {
+        assignedClasses={teacherClasses}
+        students={scopedStudents}
+        isSadhr={isSadhr}
+        selectedClassAccess={selectedClassAccess}
+        onOpenManageSubjects={() => {
+          setIsPracticalScoreModalOpen(false);
+          setIsCriteriaModalOpen(true);
+        }}
+        onSaved={() => {
           fetchMonthlyScores(selectedClass, selectedPracticalSubjectId, selectedMonth, selectedYear);
         }}
       />

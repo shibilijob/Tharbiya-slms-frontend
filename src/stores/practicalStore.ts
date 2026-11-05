@@ -35,6 +35,17 @@ interface PracticalState {
   recordEvaluation: (data: RecordPracticalPayload) => Promise<any>;
   fetchMonthlyScores: (classId?: string, practicalSubjectId?: string, month?: number, year?: number) => Promise<PracticalScore[]>;
   saveMonthlyScore: (payload: SaveScorePayload) => Promise<PracticalScore>;
+  recordBulkMonthlyScores: (payload: {
+    classId: string;
+    month: number;
+    year: number;
+    entries: Array<{
+      studentId: string;
+      practicalSubjectId: string;
+      score: number;
+      remarks?: string;
+    }>;
+  }) => Promise<PracticalScore[]>;
   fetchStudentHistory: (studentId: string) => Promise<PracticalScore[]>;
   deleteMonthlyScore: (id: string, classId?: string, practicalSubjectId?: string, month?: number, year?: number) => Promise<void>;
   clearError: () => void;
@@ -238,6 +249,45 @@ export const usePracticalStore = create<PracticalState>((set, get) => ({
       return saved;
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Failed to save practical score';
+      set({ error: msg, isLoading: false });
+      throw err;
+    }
+  },
+
+  /**
+   * Bulk record scores across multiple subjects & students for a month
+   */
+  recordBulkMonthlyScores: async (payload: {
+    classId: string;
+    month: number;
+    year: number;
+    entries: Array<{
+      studentId: string;
+      practicalSubjectId: string;
+      score: number;
+      remarks?: string;
+    }>;
+  }) => {
+    set({ isLoading: true, error: null });
+    try {
+      const savedList = await practicalScoreService.recordBulkMonthlyScores(payload);
+
+      // Immediately sync in-memory store for ALL subjects for this month
+      const keyAll = buildScoreKey(payload.classId, 'ALL', payload.year, payload.month);
+      set((state) => ({
+        scoresByMonth: {
+          ...state.scoresByMonth,
+          [keyAll]: savedList,
+        },
+      }));
+
+      // Re-fetch in-memory store for ALL subjects for this month
+      await get().fetchMonthlyScores(payload.classId, 'ALL', payload.month, payload.year);
+
+      set({ isLoading: false });
+      return savedList;
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Failed to bulk save practical scores';
       set({ error: msg, isLoading: false });
       throw err;
     }
