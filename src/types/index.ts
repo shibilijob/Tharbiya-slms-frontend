@@ -119,8 +119,9 @@ export interface AcademicAssessment {
   id: string;
   studentId: string;
   classId?: string;
-  subject: SubjectName;
-  examTerm: ExamTerm;
+  subject: SubjectName | string;
+  subjectId?: string;
+  examTerm: ExamTerm | string;
   date: string;
   maxMarks: number;
   obtainedMarks: number;
