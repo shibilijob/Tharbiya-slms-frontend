@@ -43,6 +43,21 @@ const subjectBelongsToClass = (subject: SubjectMeta, classValue: string) => {
   return subjectClassName === selectedClass || subjectClassId === selectedClass;
 };
 
+const isAssessmentForSubject = (a: AcademicAssessment, sub: { id: string; name: string }): boolean => {
+  if (!a || !sub) return false;
+  const subId = String(sub.id || '').trim();
+  const subName = String(sub.name || '').trim().toLowerCase();
+  const aSubjectId = String(a.subjectId || '').trim();
+  const aSubject = String(a.subject || '').trim().toLowerCase();
+
+  return Boolean(
+    (aSubjectId && aSubjectId === subId) ||
+    (String(a.subject) === subId) ||
+    (aSubject && subName && aSubject === subName) ||
+    (aSubjectId && subName && aSubjectId.toLowerCase() === subName)
+  );
+};
+
 export const AcademicAssessmentsTeacherView: React.FC = () => {
   const { user } = useAuth();
   const { students, assessments } = useData();
@@ -53,6 +68,12 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   const isSadhr = user?.role === 'SADHR_MUALLIM';
   const [selectedClassAccess, setSelectedClassAccess] = useState<ClassAccessItem | null>(null);
   const [classAccessLoaded, setClassAccessLoaded] = useState(!isSadhr);
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('');
+  const [selectedSubject, setSelectedSubject] = useState<string>('All');
+  const [selectedTerm, setSelectedTerm] = useState<ExamTerm>('Half Yearly');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [subjectsList, setSubjectsList] = useState<SubjectMeta[]>([]);
 
   const teacherAssignedClasses = useClassStore((s) => s.teacherAssignedClasses);
   const fetchAssignedClassesForTeacher = useClassStore((s) => s.fetchAssignedClassesForTeacher);
@@ -83,8 +104,10 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   useEffect(() => {
     if (isSadhr && selectedClassAccess) {
       void fetchAssessments(selectedClassAccess.id);
+    } else if (!isSadhr && selectedClassFilter) {
+      void fetchAssessments(selectedClassFilter);
     }
-  }, [isSadhr, selectedClassAccess, fetchAssessments]);
+  }, [isSadhr, selectedClassAccess, selectedClassFilter, fetchAssessments]);
 
   // Dynamic assigned classes for this Muallim
   const teacherUser = user as any;
@@ -123,16 +146,6 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
     return (isSadhr ? selectedClassAccess?.name.replace(/^Class\s*/i, '').trim() === sClass : teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id));
   });
-
-  // Subjects list from service for the active class filter
-  const [subjectsList, setSubjectsList] = useState<SubjectMeta[]>([]);
-
-  // Filter toolbar state
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('');
-  const [selectedSubject, setSelectedSubject] = useState<string>('All');
-  const [selectedTerm, setSelectedTerm] = useState<ExamTerm>('Half Yearly');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Load subjects for filter view based on selected class
   useEffect(() => {
@@ -177,7 +190,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   });
 
   const handleOpenAddModal = (studentId?: string, _subject?: string, term?: ExamTerm) => {
-    const student = studentId ? teacherStudents.find(s => s.id === studentId) : undefined;
+    const student = studentId ? teacherStudents.find(s => s.id === studentId) || students.find(s => s.id === studentId) : undefined;
     const initialClass = student ? normalizeClassValue(student.class) : (selectedClassFilter || teacherClasses[0] || '5');
     setModalInitialClass(initialClass);
     setModalInitialStudentId(studentId || '');
@@ -381,7 +394,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
                   <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-2.5">
                     {subjectsList.map(sub => {
                       const record = assessments.find(
-                        a => a.studentId === student.id && a.subject === sub.id && a.examTerm === selectedTerm
+                        a => a.studentId === student.id && a.examTerm === selectedTerm && isAssessmentForSubject(a, sub)
                       );
 
                       if (record) {
@@ -441,8 +454,18 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
           }
 
           // SINGLE SUBJECT VIEW (when a specific subject is filtered)
+          const selectedSubMeta = subjectsList.find(
+            s => s.id === selectedSubject || s.name.toLowerCase() === selectedSubject.toLowerCase()
+          );
           const singleRecord = assessments.find(
-            a => a.studentId === student.id && a.subject === selectedSubject && a.examTerm === selectedTerm
+            a =>
+              a.studentId === student.id &&
+              a.examTerm === selectedTerm &&
+              (selectedSubMeta
+                ? isAssessmentForSubject(a, selectedSubMeta)
+                : a.subject === selectedSubject ||
+                  a.subjectId === selectedSubject ||
+                  String(a.subject).toLowerCase() === selectedSubject.toLowerCase())
           );
 
           return (

@@ -81,9 +81,17 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
   // Sync initial props whenever modal opens
   useEffect(() => {
     if (isOpen) {
-      const cls = isSadhr
-        ? selectedClassAccess?.name.replace(/^Class\s*/i, '').trim() || ''
-        : initialClass || (teacherClasses.length > 0 ? teacherClasses[0] : '5');
+      let cls = '';
+      if (isSadhr) {
+        cls = selectedClassAccess?.name.replace(/^Class\s*/i, '').trim() || '';
+      } else {
+        const initStudent = initialStudentId ? allStudents.find((s) => s.id === initialStudentId) : null;
+        if (initStudent?.class) {
+          cls = String(initStudent.class).replace(/^Class\s*/i, '').trim();
+        } else {
+          cls = initialClass || (teacherClasses.length > 0 ? teacherClasses[0] : '5');
+        }
+      }
       setSelectedClass(cls);
       setSelectedTerm(initialTerm);
       if (initialStudentId) {
@@ -91,7 +99,7 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
       }
       setStudentSearch('');
     }
-  }, [isOpen, initialClass, initialStudentId, initialTerm, isSadhr, selectedClassAccess, teacherClasses]);
+  }, [isOpen, initialClass, initialStudentId, initialTerm, isSadhr, selectedClassAccess, teacherClasses, allStudents]);
 
   // Students eligible for the selected class
   const classStudents = useMemo(() => {
@@ -126,9 +134,19 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
   }, [classStudents, selectedStudentId, isOpen]);
 
   const activeStudent = useMemo(
-    () => classStudents.find((s) => s.id === selectedStudentId) || null,
-    [classStudents, selectedStudentId]
+    () => classStudents.find((s) => s.id === selectedStudentId) || allStudents.find((s) => s.id === selectedStudentId) || null,
+    [classStudents, allStudents, selectedStudentId]
   );
+
+  // Keep selectedClass synchronized with activeStudent if student belongs to another class
+  useEffect(() => {
+    if (activeStudent?.class) {
+      const cleanClass = String(activeStudent.class).replace(/^Class\s*/i, '').trim();
+      if (cleanClass && cleanClass !== selectedClass) {
+        setSelectedClass(cleanClass);
+      }
+    }
+  }, [activeStudent?.class, selectedClass]);
 
   // Fetch subjects & existing marks when activeStudent, selectedClass, or selectedTerm changes
   useEffect(() => {
@@ -141,7 +159,9 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
     let active = true;
     setIsLoading(true);
 
-    const targetClassId = isSadhr && selectedClassAccess?.id ? selectedClassAccess.id : selectedClass;
+    const targetClassId = isSadhr && selectedClassAccess?.id
+      ? selectedClassAccess.id
+      : (activeStudent?.class ? String(activeStudent.class).replace(/^Class\s*/i, '').trim() : selectedClass);
 
     assessmentService
       .getStudentMarks(targetClassId, selectedTerm, selectedStudentId)
@@ -155,12 +175,19 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
         // Build state rows mapping
         const rows: Record<string, SubjectMarkRowState> = {};
         subList.forEach((sub) => {
-          const matched = existingMarks.find(
-            (m) =>
-              String(m.subjectId) === String(sub.id) ||
-              String(m.subject) === String(sub.name) ||
-              String(m.subject) === String(sub.id)
-          );
+          const subId = String(sub.id || '').trim();
+          const subName = String(sub.name || '').trim().toLowerCase();
+
+          const matched = existingMarks.find((m) => {
+            const mSubId = String(m.subjectId || '').trim();
+            const mSubject = String(m.subject || '').trim().toLowerCase();
+            return (
+              (mSubId && mSubId === subId) ||
+              (mSubId && subName && mSubId.toLowerCase() === subName) ||
+              (String(m.subject) === subId) ||
+              (mSubject && subName && mSubject === subName)
+            );
+          });
 
           if (matched) {
             rows[sub.id] = {
@@ -192,7 +219,7 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
     return () => {
       active = false;
     };
-  }, [isOpen, selectedStudentId, selectedClass, selectedTerm, isSadhr, selectedClassAccess, showToast]);
+  }, [isOpen, selectedStudentId, selectedClass, selectedTerm, isSadhr, selectedClassAccess, showToast, activeStudent]);
 
   // Live Summary calculation
   const summary = useMemo(() => {
@@ -315,7 +342,9 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
 
     setIsSaving(true);
     try {
-      const targetClassId = isSadhr && selectedClassAccess?.id ? selectedClassAccess.id : selectedClass;
+      const targetClassId = isSadhr && selectedClassAccess?.id
+        ? selectedClassAccess.id
+        : (activeStudent?.class ? String(activeStudent.class).replace(/^Class\s*/i, '').trim() : selectedClass);
 
       const marksPayload = subjects.map((sub) => {
         const row = markRows[sub.id] || { marksObtained: '', maxMarks: 100, isAbsent: false, remarks: '' };
