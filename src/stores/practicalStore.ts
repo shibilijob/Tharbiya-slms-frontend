@@ -272,17 +272,37 @@ export const usePracticalStore = create<PracticalState>((set, get) => ({
     try {
       const savedList = await practicalScoreService.recordBulkMonthlyScores(payload);
 
-      // Immediately sync in-memory store for ALL subjects for this month
+      // Immediately sync in-memory store for ALL subjects and individual subjects for this month
       const keyAll = buildScoreKey(payload.classId, 'ALL', payload.year, payload.month);
+      const subjectGroups: Record<string, PracticalScore[]> = {};
+      savedList.forEach((score) => {
+        const subId = score.practicalSubjectId;
+        if (subId) {
+          if (!subjectGroups[subId]) subjectGroups[subId] = [];
+          subjectGroups[subId].push(score);
+        }
+      });
+
+      const updatedKeys: Record<string, PracticalScore[]> = {
+        [keyAll]: savedList,
+      };
+      Object.entries(subjectGroups).forEach(([subId, subScores]) => {
+        const subKey = buildScoreKey(payload.classId, subId, payload.year, payload.month);
+        updatedKeys[subKey] = subScores;
+      });
+
       set((state) => ({
         scoresByMonth: {
           ...state.scoresByMonth,
-          [keyAll]: savedList,
+          ...updatedKeys,
         },
       }));
 
-      // Re-fetch in-memory store for ALL subjects for this month
+      // Re-fetch in-memory store for ALL subjects and currently selected subject
       await get().fetchMonthlyScores(payload.classId, 'ALL', payload.month, payload.year);
+      if (get().selectedPracticalSubjectId && get().selectedPracticalSubjectId !== 'ALL') {
+        await get().fetchMonthlyScores(payload.classId, get().selectedPracticalSubjectId, payload.month, payload.year);
+      }
 
       set({ isLoading: false });
       return savedList;

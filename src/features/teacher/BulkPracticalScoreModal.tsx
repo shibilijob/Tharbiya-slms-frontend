@@ -215,8 +215,11 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
         // Build grid of existing scores
         const grid: Record<string, Record<string, CellState>> = {};
         existingScores.forEach((scoreRecord: PracticalScore) => {
-          const sId = scoreRecord.studentId;
-          const subId = scoreRecord.practicalSubjectId;
+          const rawStudent = scoreRecord.studentId as any;
+          const sId = String(rawStudent?._id || rawStudent?.id || rawStudent || '');
+          const rawSubject = scoreRecord.practicalSubjectId as any;
+          const subId = String(rawSubject?._id || rawSubject?.id || rawSubject || '');
+          if (!sId || !subId) return;
           if (!grid[sId]) grid[sId] = {};
           grid[sId][subId] = {
             score: String(scoreRecord.score),
@@ -289,11 +292,12 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
     setMarksGrid((prev) => {
       const next = { ...prev };
       classStudents.forEach((s) => {
-        if (!next[s.id]) next[s.id] = {};
-        next[s.id][subjectId] = {
+        const sId = String(s.id || (s as any)._id || '');
+        if (!next[sId]) next[sId] = {};
+        next[sId][subjectId] = {
           score: String(maxScore),
-          remarks: next[s.id]?.[subjectId]?.remarks || '',
-          isSaved: next[s.id]?.[subjectId]?.isSaved ?? false,
+          remarks: next[sId]?.[subjectId]?.remarks || '',
+          isSaved: next[sId]?.[subjectId]?.isSaved ?? false,
           isDirty: true,
         };
       });
@@ -307,8 +311,9 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
     setMarksGrid((prev) => {
       const next = { ...prev };
       classStudents.forEach((s) => {
-        if (next[s.id] && next[s.id][subjectId]) {
-          next[s.id][subjectId] = {
+        const sId = String(s.id || (s as any)._id || '');
+        if (next[sId] && next[sId][subjectId]) {
+          next[sId][subjectId] = {
             score: '',
             remarks: '',
             isSaved: false,
@@ -362,8 +367,9 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
     let validationErrorMessage = '';
 
     for (const student of allClassStudents) {
+      const studentIdStr = String(student.id || (student as any)._id || '');
       for (const subject of subjects) {
-        const cell = marksGrid[student.id]?.[subject.id];
+        const cell = marksGrid[studentIdStr]?.[subject.id] || marksGrid[student.id]?.[subject.id];
         if (cell && cell.score !== '' && cell.score !== undefined && cell.score !== null) {
           const scoreNum = Number(cell.score);
           const maxScore = subject.maxScore ?? 5;
@@ -378,7 +384,7 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
             break;
           }
           entries.push({
-            studentId: student.id,
+            studentId: studentIdStr,
             practicalSubjectId: subject.id,
             score: scoreNum,
             remarks: cell.remarks?.trim() || undefined,
@@ -438,8 +444,9 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
   const totalEntriesCount = useMemo(() => {
     let count = 0;
     allClassStudents.forEach((student) => {
+      const sId = String(student.id || (student as any)._id || '');
       subjects.forEach((subject) => {
-        const cell = marksGrid[student.id]?.[subject.id];
+        const cell = marksGrid[sId]?.[subject.id] || marksGrid[student.id]?.[subject.id];
         if (cell && cell.score !== '' && cell.score !== undefined && cell.score !== null) {
           count++;
         }
@@ -756,7 +763,8 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
                         </div>
 
                         {classStudents.map((student, studentIdx) => {
-                          const cell = marksGrid[student.id]?.[subject.id];
+                          const sId = String(student.id || (student as any)._id || '');
+                          const cell = marksGrid[sId]?.[subject.id] || marksGrid[student.id]?.[subject.id];
                           const currentVal = cell?.score ?? '';
                           const isEntered = currentVal !== '';
                           const isSaved = cell?.isSaved && !cell?.isDirty;

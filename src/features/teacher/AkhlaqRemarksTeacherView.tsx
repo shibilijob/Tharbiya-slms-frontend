@@ -30,7 +30,7 @@ import {
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
-import { useClassStore, usePracticalStore } from '../../stores';
+import { useClassStore, usePracticalStore, useBehaviourStore } from '../../stores';
 import { PracticalScore } from '../../services/practicalScoreService';
 import { useSearchParams, Link } from 'react-router-dom';
 import { classService, ClassAccessItem } from '../../services/classService';
@@ -175,7 +175,17 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
       ? Boolean(selectedClassAccess && sClass === selectedClassAccess.name.replace(/^Class\s*/i, '').trim())
       : teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id);
   });
-  const scopedAchievements = achievements.filter((achievement) => teacherStudents.some((student) => student.id === achievement.studentId));
+  const scopedAchievements = achievements.filter((achievement) =>
+    teacherStudents.some((student) => {
+      const sId = String(student.id || (student as any)._id || '');
+      const aStudentId = String(
+        (achievement.studentId as any)?._id ||
+        (achievement.studentId as any)?.id ||
+        achievement.studentId || ''
+      );
+      return Boolean(sId && aStudentId && sId === aStudentId);
+    })
+  );
 
   const filteredStudents = teacherStudents.filter(s => {
     const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
@@ -260,6 +270,8 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
       }
 
       setIsAwardModalOpen(false);
+      // Reload behaviour data so awarded badges update immediately on UI
+      useBehaviourStore.getState().fetchBehaviourData();
     } catch (e) {
       console.error("Failed to award achievement", e);
     } finally {
@@ -268,8 +280,12 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
   };
 
   // Current Month's Scores Map for immediate O(1) lookup
-  const currentKey = `${String(selectedClass).replace(/^Class\s*/i, '').trim()}_${selectedPracticalSubjectId}_${selectedYear}_${String(selectedMonth).padStart(2, '0')}`;
-  const allKey = `${String(selectedClass).replace(/^Class\s*/i, '').trim()}_ALL_${selectedYear}_${String(selectedMonth).padStart(2, '0')}`;
+  const cleanTargetClass = String(
+    selectedClass && selectedClass !== 'ALL' ? selectedClass : teacherClasses[0] || '5'
+  ).replace(/^Class\s*/i, '').trim();
+
+  const currentKey = `${cleanTargetClass}_${selectedPracticalSubjectId}_${selectedYear}_${String(selectedMonth).padStart(2, '0')}`;
+  const allKey = `${cleanTargetClass}_ALL_${selectedYear}_${String(selectedMonth).padStart(2, '0')}`;
   const currentScoresList: PracticalScore[] = scoresByMonth[currentKey] || scoresByMonth[allKey] || [];
 
   const selectedSubjectMeta = criteriaList.find(c => c.id === selectedPracticalSubjectId);
@@ -462,7 +478,15 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
               ) : (
                 filteredStudents.map(student => {
                   // Find score for this student in the current month
-                  const studentScores = currentScoresList.filter(s => s.studentId === student.id);
+                  const targetStudentId = String(student.id || (student as any)._id || '');
+                  const studentScores = currentScoresList.filter(s => {
+                    const sid = String(
+                      (s.studentId as any)?._id ||
+                      (s.studentId as any)?.id ||
+                      s.studentId || ''
+                    );
+                    return Boolean(sid && targetStudentId && sid === targetStudentId);
+                  });
 
                   let isEvaluated = false;
                   let displayText = '';
@@ -628,7 +652,11 @@ export const AkhlaqRemarksTeacherView: React.FC = () => {
           setIsCriteriaModalOpen(true);
         }}
         onSaved={() => {
-          fetchMonthlyScores(selectedClass, selectedPracticalSubjectId, selectedMonth, selectedYear);
+          const targetCls = selectedClass && selectedClass !== 'ALL' ? selectedClass : teacherClasses[0] || '5';
+          fetchMonthlyScores(targetCls, 'ALL', selectedMonth, selectedYear);
+          if (selectedPracticalSubjectId && selectedPracticalSubjectId !== 'ALL') {
+            fetchMonthlyScores(targetCls, selectedPracticalSubjectId, selectedMonth, selectedYear);
+          }
         }}
       />
 

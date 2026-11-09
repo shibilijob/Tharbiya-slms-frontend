@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { Card } from '../../components/common/Card';
 import { practicalCriteriaService } from '../../services/practicalCriteriaService';
-import { AkhlaqCategoryMeta } from '../../data/madrasaCurriculum';
+import { AkhlaqCategoryMeta, AKHLAQ_CATEGORIES } from '../../data/madrasaCurriculum';
 import { AkhlaqLevel } from '../../types';
 import {
   HeartHandshake,
@@ -26,10 +26,42 @@ export const AkhlaqView: React.FC = () => {
   }, []);
 
   const summary = getStudentSummary(selectedChildId);
-  if (!summary) return null;
+  const student = summary?.student;
+  const akhlaqScore = summary?.akhlaqScore ?? 0;
+  const akhlaqRecord = student
+    ? akhlaqRecords.find(a => String(a.studentId) === String(student.id))
+    : undefined;
 
-  const { student, akhlaqScore } = summary;
-  const akhlaqRecord = akhlaqRecords.find(a => a.studentId === student.id);
+  const displayedCategories = useMemo(() => {
+    // 1. If stored criteria exist, use them
+    if (categories.length > 0) return categories;
+
+    // 2. If akhlaqRecord has evaluated scores, derive categories from them
+    if (akhlaqRecord?.scores && Object.keys(akhlaqRecord.scores).length > 0) {
+      const seen = new Set<string>();
+      const fromRecord: AkhlaqCategoryMeta[] = [];
+      for (const [key, val] of Object.entries(akhlaqRecord.scores as Record<string, any>)) {
+        const catTitle = val.category || key;
+        if (!seen.has(catTitle.toLowerCase())) {
+          seen.add(catTitle.toLowerCase());
+          fromRecord.push({
+            id: key,
+            title: catTitle,
+            titleMalayalam: val.categoryMalayalam || catTitle,
+            description: val.remarks || `Assessment for ${catTitle}`,
+            maxScore: val.maxScore || 5,
+            icon: 'Sparkles',
+          });
+        }
+      }
+      if (fromRecord.length > 0) return fromRecord;
+    }
+
+    // 3. Fallback to standard madrasa practical curriculum
+    return AKHLAQ_CATEGORIES;
+  }, [categories, akhlaqRecord]);
+
+  if (!summary || !student) return null;
 
   const getCategoryIcon = (cat: string) => {
     switch (cat) {
@@ -114,12 +146,21 @@ export const AkhlaqView: React.FC = () => {
       {/* Practical Dimensions Cards */}
       <div>
         <h3 className="text-base font-bold text-[#1F2933] mb-4">
-          Core Pillars of Practical Assessment ({categories.length} Dimensions)
+          Core Pillars of Practical Assessment ({displayedCategories.length} Dimensions)
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {categories.map(category => {
-            const scoreItem = akhlaqRecord?.scores ? akhlaqRecord.scores[category.id] : undefined;
+          {displayedCategories.map(category => {
+            const scoreItem = akhlaqRecord?.scores
+              ? akhlaqRecord.scores[category.id] ||
+                akhlaqRecord.scores[category.title] ||
+                Object.values(akhlaqRecord.scores as Record<string, any>).find(
+                  (s: any) =>
+                    s.category?.toLowerCase() === category.title?.toLowerCase() ||
+                    s.category?.toLowerCase() === category.id?.toLowerCase()
+                )
+              : undefined;
+
             const level: AkhlaqLevel = scoreItem?.level || 'Excellent';
 
             return (
@@ -140,6 +181,15 @@ export const AkhlaqView: React.FC = () => {
                 <p className="text-xs text-[#667085] leading-relaxed mb-3">
                   {category.description}
                 </p>
+
+                {scoreItem?.score !== undefined && (
+                  <div className="flex items-center justify-between mb-3 px-3 py-2 rounded-xl bg-[#DDEDE5]/30 text-xs">
+                    <span className="text-[#667085] font-semibold">Earned Score:</span>
+                    <span className="font-extrabold text-[#0F6B50]">
+                      {scoreItem.score} {scoreItem.maxScore ? `/ ${scoreItem.maxScore} Marks` : 'Marks'}
+                    </span>
+                  </div>
+                )}
 
                 {scoreItem?.remarks && (
                   <div className="p-2.5 rounded-xl bg-[#FAF8F2] border border-[#E3EAE6] text-xs text-[#1F2933] italic">

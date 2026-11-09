@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useData } from '../../context/DataContext';
+import { useAttendanceStore } from '../../stores';
+import { parentService } from '../../services/parentService';
 import { Card } from '../../components/common/Card';
 import { EmptyState } from '../../components/feedback/EmptyState';
 import {
   CalendarCheck2,
-  Calendar
+  Calendar,
+  History,
+  CheckCircle2
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { getCalendarMonthCells, getCurrentMonthKey, getLocalDateFromKey, getMonthLabel } from '../../utils/calendar';
@@ -12,13 +16,41 @@ import { getCalendarMonthCells, getCurrentMonthKey, getLocalDateFromKey, getMont
 export const AttendanceCalendarView: React.FC = () => {
   const { selectedChildId, getStudentSummary, attendance } = useData();
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [fetchedBacklogs, setFetchedBacklogs] = useState<any[]>([]);
 
   const summary = getStudentSummary(selectedChildId);
   const student = summary?.student;
   const studentId = student?.id;
   const attendancePercentage = summary?.attendancePercentage ?? 0;
+
+  // Monthly backlog from store
+  const storeBacklogs = useAttendanceStore((s) => s.monthlyBacklog);
+  const studentStoreBacklogs = useMemo(
+    () => (studentId ? storeBacklogs.filter(b => String(b.studentId) === String(studentId)) : []),
+    [storeBacklogs, studentId]
+  );
+
+  // Fallback direct fetch if store backlogs not yet loaded
+  useEffect(() => {
+    if (!studentId) return;
+    let active = true;
+    parentService.getChildAttendanceBacklog(studentId)
+      .then((data) => {
+        if (active && Array.isArray(data)) {
+          setFetchedBacklogs(data);
+        }
+      })
+      .catch((err) => console.warn('Failed to load child attendance backlog:', err));
+    return () => { active = false; };
+  }, [studentId]);
+
+  const activeBacklogs = useMemo(() => {
+    if (studentStoreBacklogs.length > 0) return studentStoreBacklogs;
+    return fetchedBacklogs;
+  }, [studentStoreBacklogs, fetchedBacklogs]);
+
   const studentAttendance = useMemo(
-    () => studentId ? attendance.filter(a => a.studentId === studentId) : [],
+    () => (studentId ? attendance.filter(a => String(a.studentId) === String(studentId)) : []),
     [attendance, studentId]
   );
 
@@ -79,6 +111,9 @@ export const AttendanceCalendarView: React.FC = () => {
     );
   }
 
+  const hasBacklogs = activeBacklogs.length > 0;
+  const hasDailyRecords = availableMonths.length > 0;
+
   return (
     <div className="space-y-6">
       {/* Header Banner */}
@@ -89,34 +124,135 @@ export const AttendanceCalendarView: React.FC = () => {
               <CalendarCheck2 className="w-5 h-5" />
             </span>
             <h1 className="text-xl sm:text-2xl font-extrabold text-[#1F2933]">
-              Attendance Register & Calendar
+              Attendance Register & Reports
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#667085] mt-1">
-            Completed monthly attendance reports for <strong className="text-[#1F2933]">{student.name}</strong> (Class {student.class || 'not assigned'})
+            Attendance history for <strong className="text-[#1F2933]">{student.name}</strong> (Class {student.class || 'not assigned'})
           </p>
         </div>
 
         <div className="bg-[#FAF8F2] px-4 py-3 rounded-2xl border border-[#E3EAE6] text-center sm:text-right">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[#667085]">Completed Months Rate</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#667085]">Overall Attendance Rate</p>
           <p className="text-2xl font-black text-[#0F6B50] mt-0.5">{attendancePercentage}%</p>
         </div>
       </div>
 
-      {availableMonths.length === 0 ? (
-        <EmptyState
-          title="No completed attendance reports available yet."
-          description="Current-month attendance will become visible after the month is complete."
-          icon={<CalendarCheck2 className="w-7 h-7" />}
-        />
+      {/* MONTHLY ATTENDANCE BACKLOG (PREVIOUS MONTHS) - TEXT/SUMMARY NUMBERS ONLY */}
+      {hasBacklogs && (
+        <Card className="p-5 sm:p-6 bg-white border border-[#E3EAE6] shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-[#E3EAE6]">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-xl bg-[#DDEDE5] text-[#0F6B50]">
+                <History className="w-5 h-5" />
+              </span>
+              <div>
+                <h3 className="text-base font-bold text-[#1F2933]">
+                  Past Months Attendance (Monthly Backlog)
+                </h3>
+                <p className="text-xs text-[#667085]">
+                  Recorded working days and attended days for previous months
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-bold text-[#0F6B50] bg-[#DDEDE5] px-3 py-1 rounded-full self-start sm:self-auto">
+              {activeBacklogs.length} Month{activeBacklogs.length === 1 ? '' : 's'} Recorded
+            </span>
+          </div>
+
+          {/* Simple Clean Summary Cards - NO CALENDAR */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {activeBacklogs.map((b) => {
+              const working = Number(b.totalWorkingDays) || 0;
+              const attended = Number(b.attendedDays) || 0;
+              const pct = working > 0 ? Math.round((attended / working) * 100) : 0;
+              const label = b.monthName
+                ? `${b.monthName} ${b.year}`
+                : getMonthLabel(`${b.year}-${String(b.month).padStart(2, '0')}`);
+
+              return (
+                <div
+                  key={b.id || `${b.year}-${b.month}`}
+                  className="p-4 rounded-2xl bg-[#FAF8F2] border border-[#E3EAE6] flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-extrabold text-[#1F2933]">{label}</span>
+                    <span className="text-xs font-black text-[#0F6B50] bg-[#DDEDE5] px-2 py-0.5 rounded-md">
+                      {pct}%
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-[#E3EAE6]">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#667085] font-medium">Present Days</span>
+                      <span className="font-bold text-[#0F6B50]">{attended} Days</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#667085] font-medium">Total Working Days</span>
+                      <span className="font-bold text-[#1F2933]">{working} Days</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs pt-1.5 border-t border-[#E3EAE6]/50">
+                      <span className="text-[#667085] font-semibold">Attendance Ratio</span>
+                      <span className="font-extrabold text-[#1F2933]">
+                        {attended} / {working} Days
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {activeBacklogs.length > 1 && (
+            <div className="mt-5 pt-4 border-t border-[#E3EAE6] flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-[#667085]">
+              <span>
+                Total Backlog Attended:{' '}
+                <strong className="text-[#0F6B50]">
+                  {activeBacklogs.reduce((sum, b) => sum + (Number(b.attendedDays) || 0), 0)}
+                </strong>{' '}
+                /{' '}
+                <strong className="text-[#1F2933]">
+                  {activeBacklogs.reduce((sum, b) => sum + (Number(b.totalWorkingDays) || 0), 0)} Days
+                </strong>
+              </span>
+              <span>
+                Backlog Average:{' '}
+                <strong className="text-[#0F6B50]">
+                  {(() => {
+                    const totAtt = activeBacklogs.reduce((sum, b) => sum + (Number(b.attendedDays) || 0), 0);
+                    const totWork = activeBacklogs.reduce((sum, b) => sum + (Number(b.totalWorkingDays) || 0), 0);
+                    return totWork > 0 ? Math.round((totAtt / totWork) * 100) : 0;
+                  })()}%
+                </strong>
+              </span>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* DAILY ATTENDANCE CALENDAR (FOR MONTHS WITH DAILY RECORDS) */}
+      {!hasDailyRecords ? (
+        !hasBacklogs ? (
+          <EmptyState
+            title="No completed attendance reports available yet."
+            description="Attendance records will become visible once recorded by the Muallim."
+            icon={<CalendarCheck2 className="w-7 h-7" />}
+          />
+        ) : (
+          <Card className="p-5 text-center bg-[#FAF8F2] border border-[#E3EAE6]">
+            <p className="text-xs text-[#667085]">
+              Daily attendance calendar will be displayed for months with recorded daily roll calls.
+            </p>
+          </Card>
+        )
       ) : (
       <>
-        {/* 4 Attendance Summary Stats */}
+        {/* 4 Attendance Summary Stats for Selected Month */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         <Card padding="sm" className="bg-[#FAF8F2]">
           <p className="text-[10px] font-bold uppercase tracking-wider text-[#667085]">Working Days</p>
           <p className="text-xl sm:text-2xl font-black text-[#1F2933] mt-1">{totalDays}</p>
-          <p className="text-[10px] text-[#667085] mt-0.5">Recorded in selected month</p>
+          <p className="text-[10px] text-[#667085] mt-0.5">Recorded in {getMonthLabel(selectedMonth)}</p>
         </Card>
 
         <Card padding="sm" className="bg-emerald-50/70 border-emerald-200">
@@ -151,7 +287,7 @@ export const AttendanceCalendarView: React.FC = () => {
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-[#0F6B50]" />
             <h3 className="text-base font-bold text-[#1F2933]">
-              {getMonthLabel(selectedMonth)} Calendar
+              {getMonthLabel(selectedMonth)} Daily Calendar
             </h3>
           </div>
 
