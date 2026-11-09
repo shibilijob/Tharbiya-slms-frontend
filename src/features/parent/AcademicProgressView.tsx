@@ -23,7 +23,11 @@ export const AcademicProgressView: React.FC = () => {
   if (!summary) return null;
 
   const { student, studiesProgress } = summary;
-  const childAssessments = assessments.filter(a => a.studentId === student.id);
+  const targetStudentId = String(student.id || (student as any)._id || '');
+  const childAssessments = assessments.filter(a => {
+    const aStudentId = String(a.studentId || (a as any).student?._id || '');
+    return Boolean(aStudentId && targetStudentId && aStudentId === targetStudentId);
+  });
 
   const filteredAssessments = selectedTerm === 'All'
     ? childAssessments
@@ -82,62 +86,78 @@ export const AcademicProgressView: React.FC = () => {
       />
 
       {/* Subject Mark Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredAssessments.map(ass => {
-          const subjectMeta = MADRASA_SUBJECTS.find(s => s.id === ass.subject);
-          const percentage = Math.round((ass.obtainedMarks / ass.maxMarks) * 100);
+      {filteredAssessments.length === 0 ? (
+        <Card className="p-8 text-center bg-[#FAF8F2] border border-[#E3EAE6]">
+          <BookOpen className="w-8 h-8 text-[#667085] mx-auto mb-2" />
+          <p className="text-sm font-bold text-[#1F2933]">No assessment records found</p>
+          <p className="text-xs text-[#667085] mt-1">
+            {selectedTerm === 'All'
+              ? 'Academic marks have not been published for this student yet.'
+              : `No examination records found for ${selectedTerm}.`}
+          </p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredAssessments.map(ass => {
+            const subjectMeta = MADRASA_SUBJECTS.find(s => s.id === ass.subject || s.name === ass.subject);
+            const malayalamTitle = (ass as any).subjectMalayalam || subjectMeta?.malayalamName || '';
+            const subjectTitle = (ass as any).subjectName || ass.subject || 'Subject';
+            const percentage = Math.round((ass.obtainedMarks / ass.maxMarks) * 100);
 
-          return (
-            <Card key={ass.id} className="p-5 hover:border-[#0F6B50] transition-all">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-lg bg-[#DDEDE5] text-[#0F6B50] flex items-center justify-center font-bold text-xs">
-                      {ass.subject.slice(0, 2)}
-                    </span>
-                    <div>
-                      <h4 className="text-base font-bold text-[#1F2933]">{ass.subject}</h4>
-                      <p className="font-malayalam text-xs text-[#0F6B50] font-semibold">
-                        {subjectMeta?.malayalamName}
-                      </p>
+            return (
+              <Card key={ass.id} className="p-5 hover:border-[#0F6B50] transition-all">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-8 h-8 rounded-lg bg-[#DDEDE5] text-[#0F6B50] flex items-center justify-center font-bold text-xs">
+                        {subjectTitle.slice(0, 2)}
+                      </span>
+                      <div>
+                        <h4 className="text-base font-bold text-[#1F2933]">{subjectTitle}</h4>
+                        {malayalamTitle && (
+                          <p className="font-malayalam text-xs text-[#0F6B50] font-semibold">
+                            {malayalamTitle}
+                          </p>
+                        )}
+                      </div>
                     </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${getGradeBadgeClass(ass.grade)}`}>
+                      Grade {ass.grade}
+                    </span>
                   </div>
                 </div>
 
-                <div className="text-right">
-                  <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${getGradeBadgeClass(ass.grade)}`}>
-                    Grade {ass.grade}
-                  </span>
+                {/* Progress bar */}
+                <div className="mt-4">
+                  <div className="flex justify-between text-xs font-semibold mb-1">
+                    <span className="text-[#667085]">{ass.examTerm}</span>
+                    <span className="text-[#1F2933] font-bold">
+                      {ass.obtainedMarks} / {ass.maxMarks} marks ({percentage}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-[#DDEDE5]/50 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-[#0F6B50] h-full rounded-full"
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/* Progress bar */}
-              <div className="mt-4">
-                <div className="flex justify-between text-xs font-semibold mb-1">
-                  <span className="text-[#667085]">{ass.examTerm}</span>
-                  <span className="text-[#1F2933] font-bold">
-                    {ass.obtainedMarks} / {ass.maxMarks} marks ({percentage}%)
-                  </span>
-                </div>
-                <div className="w-full bg-[#DDEDE5]/50 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-[#0F6B50] h-full rounded-full"
-                    style={{ width: `${percentage}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Remarks */}
-              {ass.remarks && (
-                <div className="mt-3 pt-3 border-t border-[#FAF8F2] text-xs text-[#667085] flex items-start gap-1.5">
-                  <span className="text-[#0F6B50] font-bold">Usthad Remark:</span>
-                  <span className="italic font-medium text-[#1F2933]">"{ass.remarks}"</span>
-                </div>
-              )}
-            </Card>
-          );
-        })}
-      </div>
+                {/* Remarks */}
+                {ass.remarks && (
+                  <div className="mt-3 pt-3 border-t border-[#FAF8F2] text-xs text-[#667085] flex items-start gap-1.5">
+                    <span className="text-[#0F6B50] font-bold">Usthad Remark:</span>
+                    <span className="italic font-medium text-[#1F2933]">"{ass.remarks}"</span>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

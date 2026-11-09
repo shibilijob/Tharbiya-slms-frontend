@@ -4,20 +4,22 @@ import { api } from '../lib/axios';
 export const achievementService = {
   async getAll(): Promise<Achievement[]> {
     try {
-      const res = await api.get<any[]>('/muallim/achievements');
-      if (res.data && Array.isArray(res.data)) {
-        return res.data.map((a: any) => ({
-          id: a.id || a._id,
-          studentId: a.studentId,
-          title: a.title,
-          titleMalayalam: a.titleMalayalam,
-          category: a.category,
-          description: a.description,
-          badgeIcon: a.badgeIcon || '🏆',
-          date: typeof a.date === 'string' ? a.date.split('T')[0] : new Date(a.date).toISOString().split('T')[0],
-          awardedByTeacherName: a.awardedByName || 'Usthad'
-        }));
-      }
+      const res = await api.get<any>('/muallim/achievements');
+      const list = Array.isArray(res.data)
+        ? res.data
+        : (Array.isArray(res.data?.data) ? res.data.data : []);
+
+      return list.map((a: any) => ({
+        id: a.id || a._id,
+        studentId: a.studentId?._id ? a.studentId._id.toString() : (a.studentId?.toString() || a.studentId),
+        title: a.title,
+        titleMalayalam: a.titleMalayalam,
+        category: a.category,
+        description: a.description,
+        badgeIcon: a.badgeIcon || '🏆',
+        date: typeof a.date === 'string' ? a.date.split('T')[0] : new Date(a.date).toISOString().split('T')[0],
+        awardedByTeacherName: a.awardedByName || a.awardedByTeacherName || 'Usthad'
+      }));
     } catch (err) {
       console.warn("Failed to fetch achievements from backend:", err);
     }
@@ -26,20 +28,22 @@ export const achievementService = {
 
   async getByStudent(studentId: string): Promise<Achievement[]> {
     try {
-      const res = await api.get<any[]>(`/muallim/achievements/student/${studentId}`);
-      if (res.data && Array.isArray(res.data)) {
-        return res.data.map((a: any) => ({
-          id: a.id || a._id,
-          studentId: a.studentId,
-          title: a.title,
-          titleMalayalam: a.titleMalayalam,
-          category: a.category,
-          description: a.description,
-          badgeIcon: a.badgeIcon || '🏆',
-          date: typeof a.date === 'string' ? a.date.split('T')[0] : new Date(a.date).toISOString().split('T')[0],
-          awardedByTeacherName: a.awardedByName || 'Usthad'
-        }));
-      }
+      const res = await api.get<any>(`/muallim/achievements/student/${studentId}`);
+      const list = Array.isArray(res.data)
+        ? res.data
+        : (Array.isArray(res.data?.data) ? res.data.data : []);
+
+      return list.map((a: any) => ({
+        id: a.id || a._id,
+        studentId: a.studentId?._id ? a.studentId._id.toString() : (a.studentId?.toString() || a.studentId),
+        title: a.title,
+        titleMalayalam: a.titleMalayalam,
+        category: a.category,
+        description: a.description,
+        badgeIcon: a.badgeIcon || '🏆',
+        date: typeof a.date === 'string' ? a.date.split('T')[0] : new Date(a.date).toISOString().split('T')[0],
+        awardedByTeacherName: a.awardedByName || a.awardedByTeacherName || 'Usthad'
+      }));
     } catch (err) {
       console.warn(`Failed to fetch achievements for student ${studentId}:`, err);
     }
@@ -61,17 +65,18 @@ export const achievementService = {
         badgeIcon: achievement.badgeIcon,
       });
 
-      if (res.data) {
+      const data = res.data?.data || res.data;
+      if (data) {
         const created: Achievement = {
-          id: res.data.id || res.data._id,
-          studentId: res.data.studentId,
-          title: res.data.title,
-          titleMalayalam: res.data.titleMalayalam,
-          category: res.data.category,
-          description: res.data.description,
-          badgeIcon: res.data.badgeIcon || '🏆',
-          date: typeof res.data.date === 'string' ? res.data.date.split('T')[0] : new Date(res.data.date).toISOString().split('T')[0],
-          awardedByTeacherName: res.data.awardedByName || achievement.awardedByTeacherName || 'Usthad'
+          id: data.id || data._id,
+          studentId: data.studentId?._id ? data.studentId._id.toString() : (data.studentId?.toString() || data.studentId),
+          title: data.title,
+          titleMalayalam: data.titleMalayalam,
+          category: data.category,
+          description: data.description,
+          badgeIcon: data.badgeIcon || '🏆',
+          date: typeof data.date === 'string' ? data.date.split('T')[0] : new Date(data.date).toISOString().split('T')[0],
+          awardedByTeacherName: data.awardedByName || data.awardedByTeacherName || achievement.awardedByTeacherName || 'Usthad'
         };
 
         return created;

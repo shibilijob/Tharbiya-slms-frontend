@@ -71,7 +71,7 @@ export const ParentDashboard: React.FC = () => {
   }
 
   const { student, overallProgress, quranProgress, studiesProgress, attendancePercentage, akhlaqScore, latestAchievement, activeGoals } = summary;
-  const quranRecord = quranRecords.find(q => q.studentId === student.id);
+  const quranRecord = quranRecords.find(q => String(q.studentId) === String(student.id));
 
   return (
     <div className="space-y-6">

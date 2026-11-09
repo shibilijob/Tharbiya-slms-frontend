@@ -58,6 +58,18 @@ export interface ChildProfile {
   recentAchievements: Achievement[];
 }
 
+export interface ChildAttendanceBacklogItem {
+  id: string;
+  studentId?: string;
+  classId?: string;
+  year: number;
+  month: number;
+  monthName?: string;
+  totalWorkingDays: number;
+  attendedDays: number;
+  percentage?: number;
+}
+
 export interface ChildAttendanceResponse {
   studentId: string;
   studentName: string;
@@ -70,8 +82,14 @@ export interface ChildAttendanceResponse {
     leaveDays: number;
     holidayDays: number;
     percentage: number;
+    totalWorkingDays?: number;
+    dailyPresentDays?: number;
+    dailyWorkingDays?: number;
+    backlogAttendedDays?: number;
+    backlogTotalWorkingDays?: number;
   };
   records: any[];
+  backlogs?: ChildAttendanceBacklogItem[];
 }
 
 export interface ChildHifzResponse {
@@ -176,6 +194,16 @@ export const parentService = {
       { params }
     );
     return unwrapApiData<ChildAttendanceResponse>(res);
+  },
+
+  /**
+   * Get Child Monthly Attendance Backlogs (Past Months Record)
+   */
+  async getChildAttendanceBacklog(studentId: string): Promise<ChildAttendanceBacklogItem[]> {
+    const res = await api.get<ChildAttendanceBacklogItem[]>(
+      `/parent/children/${studentId}/attendance/backlog`
+    );
+    return unwrapApiData<ChildAttendanceBacklogItem[]>(res);
   },
 
   /**

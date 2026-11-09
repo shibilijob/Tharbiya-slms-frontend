@@ -19,6 +19,7 @@ interface AttendanceState {
   // Actions
   setSelectedDate: (date: string) => void;
   setAttendance: (records: AttendanceRecord[]) => void;
+  setMonthlyBacklog: (records: MonthlyAttendanceBacklogRecord[]) => void;
   fetchAttendance: () => Promise<AttendanceRecord[]>;
   fetchByStudent: (studentId: string) => Promise<AttendanceRecord[]>;
   fetchByDateAndClass: (date: string, classId?: string) => Promise<AttendanceRecord[]>;
@@ -47,6 +48,10 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
   setAttendance: (attendance: AttendanceRecord[]) => {
     set({ attendance });
+  },
+
+  setMonthlyBacklog: (monthlyBacklog: MonthlyAttendanceBacklogRecord[]) => {
+    set({ monthlyBacklog });
   },
 
   clearError: () => {

@@ -98,26 +98,48 @@ const mapParentHifzToQuranProgress = (data: ChildHifzResponse): QuranProgress =>
 };
 
 const mapParentPracticalToAkhlaq = (data: ChildPracticalResponse): AkhlaqRecord | null => {
-  const latest = data.evaluations?.[0] || data.report.recentEvaluations?.[0];
-  if (!latest && data.report.totalEvaluations === 0) return null;
+  const latest = data.evaluations?.[0] || data.report?.recentEvaluations?.[0];
+  if (!latest && (!data.report || data.report.totalEvaluations === 0)) return null;
 
   const scores = (latest?.scores || []).reduce((acc: Record<string, any>, item: any) => {
-    const key = item.category || item.practicalSubjectId || 'Practical';
-    acc[key] = {
+    const key = item.category || item.subjectName || item.practicalSubjectId || 'Practical';
+    const scoreVal = typeof item.score === 'number' ? item.score : 0;
+    const maxScoreVal = typeof item.maxScore === 'number' && item.maxScore > 0 ? item.maxScore : 5;
+    const scorePct = maxScoreVal > 0 ? (scoreVal / maxScoreVal) * 100 : 0;
+
+    const level = scorePct >= 90
+      ? 'Excellent'
+      : scorePct >= 75
+      ? 'Very Good'
+      : scorePct >= 50
+      ? 'Good'
+      : scorePct >= 35
+      ? 'Developing'
+      : 'Needs Attention';
+
+    const scoreData = {
       category: key,
-      categoryMalayalam: '',
-      level: 'Good',
-      score: item.score || 0,
+      categoryMalayalam: item.subjectNameMalayalam || item.categoryMalayalam || '',
+      level,
+      score: scoreVal,
+      maxScore: maxScoreVal,
       remarks: item.remarks || '',
     };
+
+    acc[key] = scoreData;
+    if (item.practicalSubjectId) {
+      acc[item.practicalSubjectId] = scoreData;
+    }
     return acc;
   }, {});
 
   return {
     id: latest?._id?.toString?.() || latest?.id || `practical-${data.studentId}`,
-    studentId: data.studentId,
+    studentId: String(data.studentId),
     evaluatedDate: latest?.date ? new Date(latest.date).toISOString().split('T')[0] : '',
-    overallScore: data.report.averageScore || latest?.overallScore || 0,
+    overallScore: typeof data.report?.averageScore === 'number' && data.report.averageScore > 0
+      ? data.report.averageScore
+      : (latest?.overallScore || 0),
     scores,
     teacherRemarks: latest?.overallRemarks || '',
     teacherId: latest?.evaluatedById?._id || latest?.evaluatedById || '',
@@ -132,6 +154,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const students = useStudentStore((s) => s.students);
   const selectedChildId = useStudentStore((s) => s.selectedChildId);
   const attendance = useAttendanceStore((s) => s.attendance);
+  const monthlyBacklog = useAttendanceStore((s) => s.monthlyBacklog);
   const assessments = useAssessmentStore((s) => s.assessments);
   const quranRecords = useHifzStore((s) => s.quranRecords);
   const akhlaqRecords = useBehaviourStore((s) => s.akhlaqRecords);
@@ -199,29 +222,56 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return mapped ? [mapped] : [];
         });
 
-        const parentAchievements = achievementResults.flatMap((result) =>
-          result.status === 'fulfilled'
-            ? result.value.achievements.map((achievement: any) => ({
-                id: achievement.id || achievement._id,
-                studentId: achievement.studentId,
-                title: achievement.title,
-                titleMalayalam: achievement.titleMalayalam,
-                category: achievement.category,
-                description: achievement.description,
-                badgeIcon: achievement.badgeIcon || '',
-                date: typeof achievement.date === 'string'
-                  ? achievement.date.split('T')[0]
-                  : new Date(achievement.date).toISOString().split('T')[0],
-                awardedByTeacherName: achievement.awardedByName || achievement.awardedByTeacherName || '',
-              }))
-            : []
-        );
+        const parentBacklogs = attendanceResults.flatMap((result) => {
+          if (result.status !== 'fulfilled' || !Array.isArray(result.value?.backlogs)) return [];
+          return result.value.backlogs.map((b: any) => ({
+            id: b.id || b._id?.toString?.() || b._id,
+            studentId: String(b.studentId || result.value.studentId),
+            classId: String(b.classId || ''),
+            year: Number(b.year),
+            month: Number(b.month),
+            monthName: b.monthName,
+            totalWorkingDays: Number(b.totalWorkingDays),
+            attendedDays: Number(b.attendedDays),
+          }));
+        });
+
+        const parentAchievements = achievementResults.flatMap((result) => {
+          if (result.status !== 'fulfilled') return [];
+          const raw: any = result.value;
+          const list: any[] = Array.isArray(raw)
+            ? raw
+            : Array.isArray(raw?.achievements)
+            ? raw.achievements
+            : Array.isArray(raw?.data)
+            ? raw.data
+            : [];
+          return list.map((achievement: any) => ({
+            id: achievement.id || achievement._id?.toString?.() || achievement._id,
+            studentId: achievement.studentId?._id
+              ? String(achievement.studentId._id)
+              : String(achievement.studentId || ''),
+            title: achievement.title,
+            titleMalayalam: achievement.titleMalayalam,
+            category: achievement.category,
+            description: achievement.description,
+            badgeIcon: achievement.badgeIcon || '🏆',
+            date: typeof achievement.date === 'string'
+              ? achievement.date.split('T')[0]
+              : new Date(achievement.date).toISOString().split('T')[0],
+            awardedByTeacherName: achievement.awardedByName || achievement.awardedByTeacherName || '',
+          }));
+        });
 
         useAttendanceStore.getState().setAttendance(parentAttendance);
+        useAttendanceStore.getState().setMonthlyBacklog(parentBacklogs);
         useHifzStore.getState().setQuranRecords(parentHifz);
         useBehaviourStore.getState().setAkhlaqRecords(parentPractical);
         useBehaviourStore.getState().setAchievements(parentAchievements);
-        await useAnnouncementStore.getState().fetchAnnouncements();
+        await Promise.allSettled([
+          useAssessmentStore.getState().fetchAssessments(),
+          useAnnouncementStore.getState().fetchAnnouncements(),
+        ]);
         return;
       }
 
@@ -258,7 +308,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const getStudentSummary = useCallback(
     (studentId: string): StudentSummary | null => {
-      const student = students.find((s) => s.id === studentId);
+      const student = students.find((s) => String(s.id) === String(studentId));
       if (!student) return null;
 
       return computeStudentSummary(
@@ -269,10 +319,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         akhlaqRecords,
         remarks,
         achievements,
-        goals
+        goals,
+        monthlyBacklog
       );
     },
-    [students, attendance, assessments, quranRecords, akhlaqRecords, remarks, achievements, goals]
+    [students, attendance, assessments, quranRecords, akhlaqRecords, remarks, achievements, goals, monthlyBacklog]
   );
 
   const addStudent = useCallback(async (data: Omit<Student, 'id'>) => {

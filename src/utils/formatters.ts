@@ -7,7 +7,8 @@ import {
   TeacherRemark,
   Achievement,
   StudentGoal,
-  StudentSummary
+  StudentSummary,
+  MonthlyAttendanceBacklogRecord
 } from '../types';
 import { getGradeColor } from './gradeCalculator';
 
@@ -43,16 +44,31 @@ export function formatTimeAgo(timestamp?: string): string {
   }
 }
 
-export function calculateAttendancePercentage(studentId: string, records: AttendanceRecord[]): number {
-  const studentRecords = records.filter(r => r.studentId === studentId);
-  if (studentRecords.length === 0) return 0;
-  const presentCount = studentRecords.filter(r => r.status === 'PRESENT').length;
-  const countedDays = studentRecords.filter(r => r.status !== 'HOLIDAY').length;
-  return countedDays > 0 ? Math.round((presentCount / countedDays) * 100) : 0;
+export function calculateAttendancePercentage(
+  studentId: string,
+  records: AttendanceRecord[],
+  backlogs?: MonthlyAttendanceBacklogRecord[]
+): number {
+  const studentRecords = records.filter(r => String(r.studentId) === String(studentId));
+  const studentBacklogs = backlogs ? backlogs.filter(b => String(b.studentId) === String(studentId)) : [];
+
+  const dailyPresent = studentRecords.filter(r => r.status === 'PRESENT').length;
+  const dailyWorking = studentRecords.filter(r => r.status !== 'HOLIDAY').length;
+
+  const backlogAttended = studentBacklogs.reduce((sum, b) => sum + (Number(b.attendedDays) || 0), 0);
+  const backlogWorking = studentBacklogs.reduce((sum, b) => sum + (Number(b.totalWorkingDays) || 0), 0);
+
+  const totalAttended = dailyPresent + backlogAttended;
+  const totalWorking = dailyWorking + backlogWorking;
+
+  if (totalWorking === 0) {
+    return studentRecords.length === 0 && studentBacklogs.length === 0 ? 0 : 100;
+  }
+  return Math.round((totalAttended / totalWorking) * 100);
 }
 
 export function calculateStudiesScore(studentId: string, assessments: AcademicAssessment[]): number {
-  const studentAssessments = assessments.filter(a => a.studentId === studentId);
+  const studentAssessments = assessments.filter(a => String(a.studentId) === String(studentId));
   if (studentAssessments.length === 0) return 0;
   const totalObtained = studentAssessments.reduce((acc, curr) => acc + (curr.obtainedMarks / curr.maxMarks) * 100, 0);
   return Math.round(totalObtained / studentAssessments.length);
@@ -66,22 +82,24 @@ export function computeStudentSummary(
   allAkhlaq: AkhlaqRecord[],
   allRemarks: TeacherRemark[],
   allAchievements: Achievement[],
-  allGoals: StudentGoal[]
+  allGoals: StudentGoal[],
+  allBacklogs?: MonthlyAttendanceBacklogRecord[]
 ): StudentSummary {
-  const attendancePct = calculateAttendancePercentage(student.id, allAttendance);
-  const studiesScore = calculateStudiesScore(student.id, allAssessments);
+  const targetId = String(student.id || (student as any)._id || '');
+  const attendancePct = calculateAttendancePercentage(targetId, allAttendance, allBacklogs);
+  const studiesScore = calculateStudiesScore(targetId, allAssessments);
   
-  const quranRec = allQuran.find(q => q.studentId === student.id);
+  const quranRec = allQuran.find(q => String(q.studentId) === targetId);
   const quranScore = quranRec ? Math.min(98, Math.max(0, 75 + (quranRec.hifzSurahsCount * 0.8) - (quranRec.mistakesCount * 3))) : 0;
 
-  const akhlaqRec = allAkhlaq.find(a => a.studentId === student.id);
+  const akhlaqRec = allAkhlaq.find(a => String(a.studentId) === targetId);
   const akhlaqScore = akhlaqRec ? akhlaqRec.overallScore : 0;
 
   const overall = Math.round((quranScore * 0.35) + (studiesScore * 0.3) + (attendancePct * 0.2) + (akhlaqScore * 0.15));
 
-  const studentRemarks = allRemarks.filter(r => r.studentId === student.id);
-  const studentAchievements = allAchievements.filter(a => a.studentId === student.id);
-  const studentGoals = allGoals.filter(g => g.studentId === student.id);
+  const studentRemarks = allRemarks.filter(r => String((r.studentId as any)?._id || r.studentId) === targetId);
+  const studentAchievements = allAchievements.filter(a => String((a.studentId as any)?._id || a.studentId) === targetId);
+  const studentGoals = allGoals.filter(g => String((g.studentId as any)?._id || g.studentId) === targetId);
 
   return {
     student,
