@@ -10,3 +10,5 @@ export * from './timetableStore';
 export * from './assessmentStore';
 export * from './behaviourStore';
 export * from './announcementStore';
+export * from './muallimAttendanceStore';
+export * from './myAttendanceStore';

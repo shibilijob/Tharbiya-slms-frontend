@@ -281,3 +281,66 @@ export interface TimetablePeriod {
   room: string;
   notes?: string;
 }
+
+export type MuallimShiftId = 'SHIFT_1' | 'SHIFT_2' | 'SHIFT_3';
+export type MuallimAttendanceStatusType = 'PRESENT' | 'CL' | 'HPL' | 'LLP' | 'HOLIDAY';
+
+export interface MuallimAttendanceRecord {
+  id: string;
+  userId: string;
+  date: string;
+  shiftId: MuallimShiftId;
+  status: MuallimAttendanceStatusType;
+  remarks?: string;
+  holidayReason?: string | null;
+  markedBy?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface MuallimDayRecord {
+  dateStr: string;
+  dayNumber: number;
+  dayName: string;
+  shift1: string;
+  shift2: string;
+  shift3: string;
+  shift1Reason?: string | null;
+  shift2Reason?: string | null;
+  shift3Reason?: string | null;
+  summary: string;
+}
+
+export interface MuallimMonthlyStats {
+  totalScheduledShifts: number;
+  presentShifts: number;
+  clShifts: number;
+  hplShifts: number;
+  llpShifts: number;
+  holidayShifts: number;
+  notRecordedShifts: number;
+  presentDayEquivalent: number;
+  clDayEquivalent: number;
+  hplDayEquivalent: number;
+  llpDayEquivalent: number;
+  holidayDayEquivalent: number;
+  attendancePercentage: number;
+}
+
+export interface MuallimMonthlySummary {
+  muallim: TeacherUser;
+  stats: MuallimMonthlyStats;
+  dailyRecords: MuallimDayRecord[];
+}
+
+export interface MyAttendanceData {
+  year: number;
+  month: number;
+  monthName: string;
+  daysInMonth: number;
+  markedDatesCount: number;
+  muallim: TeacherUser;
+  stats: MuallimMonthlyStats;
+  dailyRecords: MuallimDayRecord[];
+}
+

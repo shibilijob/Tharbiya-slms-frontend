@@ -30,6 +30,7 @@ import { AttendanceBatchMarker } from '../features/teacher/AttendanceBatchMarker
 import { AcademicAssessmentsTeacherView } from '../features/teacher/AcademicAssessmentsTeacherView';
 import { QuranHifzTeacherView } from '../features/teacher/QuranHifzTeacherView';
 import { AkhlaqRemarksTeacherView } from '../features/teacher/AkhlaqRemarksTeacherView';
+import { MyAttendanceView } from '../features/teacher/MyAttendanceView';
 
 // Admin Pages
 import { AdminDashboard } from '../features/admin/AdminDashboard';
@@ -86,6 +87,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="assessments" element={<AcademicAssessmentsTeacherView />} />
         <Route path="quran" element={<QuranHifzTeacherView />} />
         <Route path="akhlaq-remarks" element={<AkhlaqRemarksTeacherView />} />
+        <Route path="my-attendance" element={<MyAttendanceView />} />
       </Route>
 
       {/* Sadhr Muallim Portal */}
@@ -101,6 +103,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="dashboard" element={<AdminDashboard />} />
         <Route path="students" element={<StudentManagerView />} />
         <Route path="teachers" element={<TeacherManagerView />} />
+        <Route path="attendance" element={<Navigate to="/admin/teachers?tab=attendance" replace />} />
         <Route path="parents" element={<ParentManagerView />} />
         <Route path="classes" element={<ClassManagerView />} />
         <Route path="reports" element={<ReportsCenterView />} />

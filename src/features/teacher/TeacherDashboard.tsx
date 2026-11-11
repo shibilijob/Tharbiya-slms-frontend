@@ -694,6 +694,15 @@ export const TeacherDashboard: React.FC = () => {
             <p className="text-xs font-bold text-[#1F2933]">Student Dossiers</p>
             <p className="text-[10px] text-[#667085] mt-0.5">View all {totalStudentsCount} students in {isSadhr ? `Class ${dashboardClass}` : 'your assigned classes'}</p>
           </Link>
+
+          <Link
+            to="/teacher/my-attendance"
+            className="p-4 rounded-2xl bg-[#DDEDE5]/30 hover:bg-[#DDEDE5]/70 border border-[#bbdcd0] transition-all group"
+          >
+            <CalendarCheck className="w-6 h-6 text-[#0F6B50] mb-2 group-hover:scale-105 transition-transform" />
+            <p className="text-xs font-bold text-[#084C3A]">My Attendance</p>
+            <p className="text-[10px] text-[#0F6B50] mt-0.5">Personal three-shift register & monthly summary</p>
+          </Link>
         </div>
       </Card>
 
