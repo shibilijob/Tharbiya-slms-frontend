@@ -134,13 +134,15 @@ export const TeacherLayout: React.FC = () => {
     { label: 'Mark Attendance', path: '/teacher/attendance', icon: <CalendarCheck className="w-4 h-4" /> },
     { label: 'Academic Assessments', path: '/teacher/assessments', icon: <GraduationCap className="w-4 h-4" /> },
     { label: 'Hifz Tracker', path: '/teacher/quran', icon: <BookOpen className="w-4 h-4" /> },
-    { label: 'Practical Score & Awards', path: '/teacher/akhlaq-remarks', icon: <HeartHandshake className="w-4 h-4" /> }
+    { label: 'Practical Score & Awards', path: '/teacher/akhlaq-remarks', icon: <HeartHandshake className="w-4 h-4" /> },
+    { label: 'My Attendance', path: '/teacher/my-attendance', icon: <CalendarDays className="w-4 h-4" /> },
   ];
 
   const moreMenuItems = [
     ...(user?.role === 'SADHR_MUALLIM' ? [{ label: 'Return to Sadhr Admin', path: '/admin/dashboard', icon: <ShieldCheck className="w-5 h-5 text-[#C9A227]" /> }] : []),
+    { label: 'My Attendance', path: '/teacher/my-attendance', icon: <CalendarDays className="w-5 h-5 text-[#0F6B50]" /> },
     { label: 'Academic Assessments', path: '/teacher/assessments', icon: <GraduationCap className="w-5 h-5 text-[#0F6B50]" /> },
-    { label: 'Practical Score & Awards', path: '/teacher/akhlaq-remarks', icon: <HeartHandshake className="w-5 h-5 text-[#C9A227]" /> }
+    { label: 'Practical Score & Awards', path: '/teacher/akhlaq-remarks', icon: <HeartHandshake className="w-5 h-5 text-[#C9A227]" /> },
   ];
 
   const isMoreActive = moreMenuItems.some(m => location.pathname === m.path);

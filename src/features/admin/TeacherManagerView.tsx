@@ -1,18 +1,42 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
 import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
+import { Tabs, TabItem } from '../../components/common/Tabs';
 import { ConfirmationDialog } from '../../components/feedback/ConfirmationDialog';
 import { TeacherUser } from '../../types';
 import { useNotifications } from '../../context/NotificationContext';
 import { api } from '../../lib/axios';
 import { useClassStore } from '../../stores';
-import { Users, Plus, Edit2, Trash2, Phone, Mail, GraduationCap, Search, RefreshCw, Lock } from 'lucide-react';
+import {
+  Users,
+  Plus,
+  Edit2,
+  Trash2,
+  Phone,
+  Mail,
+  GraduationCap,
+  Search,
+  RefreshCw,
+  Lock,
+  CalendarCheck,
+  FileSpreadsheet,
+} from 'lucide-react';
+import { MuallimAttendanceView } from './attendance/MuallimAttendanceView';
+import { MuallimMonthlyReportView } from './attendance/MuallimMonthlyReportView';
 
 export const TeacherManagerView: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get('tab') || 'directory';
+
+  const handleTabChange = (tabId: string) => {
+    setSearchParams({ tab: tabId });
+  };
+
   const [teachersList, setTeachersList] = useState<TeacherUser[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -214,6 +238,25 @@ export const TeacherManagerView: React.FC = () => {
     return matchesName || matchesPhone || matchesEmail || matchesDesignation || matchesClasses;
   });
 
+  const tabs: TabItem[] = [
+    {
+      id: 'directory',
+      label: 'Muallim Directory',
+      icon: <Users className="w-4 h-4" />,
+      count: teachersList.length,
+    },
+    {
+      id: 'attendance',
+      label: 'Attendance',
+      icon: <CalendarCheck className="w-4 h-4" />,
+    },
+    {
+      id: 'monthly',
+      label: 'Monthly Report',
+      icon: <FileSpreadsheet className="w-4 h-4" />,
+    },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -228,19 +271,52 @@ export const TeacherManagerView: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#667085] mt-1">
-            Manage Madrasa Muallims, designations, assigned classes, and portal logins
+            Manage Madrasa Muallims, designations, assigned classes, shift-based attendance, and reports
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button size="md" variant="outline" onClick={loadTeachers} isLoading={isLoading}>
-            <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
-          </Button>
-          <Button size="md" variant="primary" onClick={handleOpenAdd} leftIcon={<Plus className="w-4 h-4" />}>
-            Add New Muallim
-          </Button>
+          {currentTab === 'directory' ? (
+            <>
+              <Button size="md" variant="outline" onClick={loadTeachers} isLoading={isLoading}>
+                <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
+              </Button>
+              <Button size="md" variant="primary" onClick={handleOpenAdd} leftIcon={<Plus className="w-4 h-4" />}>
+                Add New Muallim
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="md"
+              variant="outline"
+              onClick={() => handleTabChange('directory')}
+              leftIcon={<Users className="w-4 h-4" />}
+            >
+              Muallim Directory
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Tabs Navigation */}
+      <div className="bg-white p-2 rounded-2xl border border-[#E3EAE6] shadow-xs">
+        <Tabs
+          tabs={tabs}
+          activeTab={currentTab}
+          onChange={handleTabChange}
+          variant="pills"
+        />
+      </div>
+
+      {/* Tab 1: Shift Attendance */}
+      {currentTab === 'attendance' && <MuallimAttendanceView />}
+
+      {/* Tab 2: Monthly Report */}
+      {currentTab === 'monthly' && <MuallimMonthlyReportView />}
+
+      {/* Tab 3: Muallim Directory */}
+      {currentTab === 'directory' && (
+        <>
 
       {/* Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-[#E3EAE6] shadow-xs flex items-center gap-3">
@@ -331,6 +407,8 @@ export const TeacherManagerView: React.FC = () => {
             </Card>
           ))}
         </div>
+      )}
+        </>
       )}
 
       {/* Add / Edit Modal */}

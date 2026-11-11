@@ -93,6 +93,11 @@ export const AdminDashboard: React.FC = () => {
                 Switch to My Muallim Dashboard
               </Button>
             </Link>
+            <Link to="/admin/teachers?tab=attendance">
+              <Button variant="outline" size="md" className="border-white/30 text-white hover:bg-white/10" leftIcon={<Users className="w-4 h-4" />}>
+                Muallim Attendance
+              </Button>
+            </Link>
             <Link to="/admin/reports">
               <Button variant="outline" size="md" className="border-white/30 text-white hover:bg-white/10" leftIcon={<FileSpreadsheet className="w-4 h-4" />}>
                 Result
