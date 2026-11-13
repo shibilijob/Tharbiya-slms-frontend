@@ -8,6 +8,7 @@ import { Student } from '../../types';
 import { api } from '../../lib/axios';
 import { useAttendanceStore } from '../../stores/attendanceStore';
 import { useNotifications } from '../../context/NotificationContext';
+import { mapBackendStudentToFrontend } from '../../services/studentService';
 import { Save, CheckCheck, RotateCcw } from 'lucide-react';
 
 interface MonthlyBacklogModalProps {
@@ -17,6 +18,8 @@ interface MonthlyBacklogModalProps {
   className: string;
   students: Student[];
   onSaved?: () => void;
+  teacherClasses?: string[];
+  isSadhr?: boolean;
 }
 
 const MONTHS = [
@@ -41,6 +44,8 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
   className,
   students,
   onSaved,
+  teacherClasses = [],
+  isSadhr = false,
 }) => {
   const { showToast } = useNotifications();
   const saveMonthlyBacklog = useAttendanceStore((s) => s.saveMonthlyBacklog);
@@ -50,6 +55,9 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
   const defaultMonth = currentDate.getMonth() === 0 ? 12 : currentDate.getMonth();
   const defaultYear = currentDate.getMonth() === 0 ? currentDate.getFullYear() - 1 : currentDate.getFullYear();
 
+  const [currentClassId, setCurrentClassId] = useState<string>(classId);
+  const [classStudents, setClassStudents] = useState<Student[]>([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState<boolean>(false);
   const [selectedYear, setSelectedYear] = useState<number>(defaultYear);
   const [selectedMonth, setSelectedMonth] = useState<number>(defaultMonth);
   const [totalWorkingDays, setTotalWorkingDays] = useState<number>(24);
@@ -57,22 +65,107 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
   const [isLoadingExisting, setIsLoadingExisting] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
+  // Sync currentClassId when modal opens or classId prop changes
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentClassId(classId);
+    }
+  }, [isOpen, classId]);
+
+  // Load students belonging strictly to the currently selected class
+  useEffect(() => {
+    if (!isOpen || !currentClassId) {
+      setClassStudents([]);
+      return;
+    }
+
+    let active = true;
+    // Clear the previous class's student list before loading the new one
+    setClassStudents([]);
+    setStudentAttendedMap({});
+    setIsLoadingStudents(true);
+
+    const loadStudents = async () => {
+      const cleanRequested = String(currentClassId).replace(/^Class\s*/i, '').trim();
+      const cleanTarget = cleanRequested.toLowerCase();
+
+      try {
+        // Pass the selected classId directly to the student-fetching API
+        const res: any = await api.get(`/muallim/classes/${cleanRequested}/students`);
+
+        if (!active) return;
+
+        const rawList = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res)
+          ? res
+          : [];
+
+        const mapped: Student[] = rawList.map((s: any) =>
+          mapBackendStudentToFrontend(s, cleanRequested)
+        );
+
+        // Apply classId filtering at frontend level to guarantee only current class students are kept
+        const filtered = mapped.filter((s) => {
+          const sClass = String(s.class || '').replace(/^Class\s*/i, '').trim().toLowerCase();
+          const sClassId = String((s as any).classId?._id || (s as any).classId || '').toLowerCase();
+          return sClass === cleanTarget || sClassId === cleanTarget;
+        });
+
+        if (filtered.length > 0) {
+          setClassStudents(filtered);
+        } else {
+          // Fallback to prop students strictly filtered by the current classId
+          const propFiltered = (students || []).filter((s) => {
+            const sClass = String(s.class || '').replace(/^Class\s*/i, '').trim().toLowerCase();
+            const sClassId = String((s as any).classId?._id || (s as any).classId || '').toLowerCase();
+            return sClass === cleanTarget || sClassId === cleanTarget;
+          });
+          setClassStudents(propFiltered);
+        }
+      } catch (err) {
+        if (!active) return;
+        console.warn('Failed to load students for class backlog:', err);
+        // Fallback to prop students strictly filtered by current class
+        const propFiltered = (students || []).filter((s) => {
+          const sClass = String(s.class || '').replace(/^Class\s*/i, '').trim().toLowerCase();
+          const sClassId = String((s as any).classId?._id || (s as any).classId || '').toLowerCase();
+          return sClass === cleanTarget || sClassId === cleanTarget;
+        });
+        setClassStudents(propFiltered);
+      } finally {
+        if (active) {
+          setIsLoadingStudents(false);
+        }
+      }
+    };
+
+    loadStudents();
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen, currentClassId, students]);
+
   // Load existing records for the chosen class, year, and month
   useEffect(() => {
-    if (!isOpen || !classId) return;
+    if (!isOpen || !currentClassId) return;
 
     let active = true;
     setIsLoadingExisting(true);
 
     const loadExistingBacklog = async () => {
       try {
+        const cleanTarget = String(currentClassId).replace(/^Class\s*/i, '').trim();
         let res: any;
         try {
-          res = await api.get(`/attendance/backlog/class/${classId}`, {
+          res = await api.get(`/attendance/backlog/class/${cleanTarget}`, {
             params: { year: selectedYear, month: selectedMonth },
           });
         } catch {
-          res = await api.get(`/attendance/backlog/${classId}`, {
+          res = await api.get(`/attendance/backlog/${cleanTarget}`, {
             params: { year: selectedYear, month: selectedMonth },
           });
         }
@@ -102,7 +195,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
             const attended = typeof r.attendedDays === 'number' ? r.attendedDays : foundWorkingDays;
             map[sId] = attended;
 
-            const matchedStudent = students.find(
+            const matchedStudent = classStudents.find(
               (s) => String(s.id) === sId || String((s as any)._id) === sId
             );
             if (matchedStudent) {
@@ -113,8 +206,8 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
             }
           });
 
-          // Initialize any student not in the backlog with default working days
-          students.forEach((s) => {
+          // Initialize any student in this class not in the backlog with default working days
+          classStudents.forEach((s) => {
             if (map[s.id] === undefined) {
               map[s.id] = foundWorkingDays;
             }
@@ -125,7 +218,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
           // If no records exist, fallback to the default 24 days
           setTotalWorkingDays(24);
           const map: Record<string, number> = {};
-          students.forEach((s) => {
+          classStudents.forEach((s) => {
             map[s.id] = 24;
           });
           setStudentAttendedMap(map);
@@ -135,7 +228,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
         console.error('Failed to load existing backlog:', err);
         setTotalWorkingDays(24);
         const map: Record<string, number> = {};
-        students.forEach((s) => {
+        classStudents.forEach((s) => {
           map[s.id] = 24;
         });
         setStudentAttendedMap(map);
@@ -151,7 +244,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, classId, selectedYear, selectedMonth, students]);
+  }, [isOpen, currentClassId, selectedYear, selectedMonth, classStudents]);
 
   const handleAttendedChange = (studentId: string, val: string) => {
     const num = val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0);
@@ -163,7 +256,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
 
   const handleSetAllMax = () => {
     const updated: Record<string, number> = {};
-    students.forEach((s) => {
+    classStudents.forEach((s) => {
       updated[s.id] = totalWorkingDays;
     });
     setStudentAttendedMap(updated);
@@ -172,7 +265,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
 
   const handleResetAllZero = () => {
     const updated: Record<string, number> = {};
-    students.forEach((s) => {
+    classStudents.forEach((s) => {
       updated[s.id] = 0;
     });
     setStudentAttendedMap(updated);
@@ -185,7 +278,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
       return;
     }
 
-    if (students.length === 0) {
+    if (classStudents.length === 0) {
       showToast('No students enrolled in this class to record attendance');
       return;
     }
@@ -195,13 +288,13 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
       const monthObj = MONTHS.find((m) => m.value === Number(selectedMonth));
       const monthName = monthObj ? monthObj.label : `Month ${selectedMonth}`;
 
-      const studentsData = students.map((s) => ({
+      const studentsData = classStudents.map((s) => ({
         studentId: s.id,
         attendedDays: Math.min(studentAttendedMap[s.id] ?? totalWorkingDays, totalWorkingDays),
       }));
 
       await saveMonthlyBacklog({
-        classId,
+        classId: currentClassId,
         year: Number(selectedYear),
         month: Number(selectedMonth),
         monthName,
@@ -221,17 +314,44 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
     }
   };
 
+  const currentDisplayClassName = isSadhr
+    ? className
+    : currentClassId
+    ? `Class ${String(currentClassId).replace(/^Class\s*/i, '').trim()}`
+    : className;
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title="Add / Edit Previous Month Attendance"
-      subtitle={`Enter aggregated historical monthly attendance for ${className}`}
+      subtitle={`Enter aggregated historical monthly attendance for ${currentDisplayClassName}`}
       maxWidth="2xl"
     >
       <div className="space-y-5">
-        {/* Top Controls: Year, Month, Total Working Days */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-[#FAF8F2] rounded-2xl border border-[#E3EAE6]">
+        {/* Top Controls: Class (if multiple), Month, Year, Total Working Days */}
+        <div
+          className={`grid grid-cols-1 ${
+            teacherClasses && teacherClasses.length > 1 && !isSadhr ? 'sm:grid-cols-4' : 'sm:grid-cols-3'
+          } gap-3 p-4 bg-[#FAF8F2] rounded-2xl border border-[#E3EAE6]`}
+        >
+          {/* Class Selector if teacher has multiple assigned classes */}
+          {teacherClasses && teacherClasses.length > 1 && !isSadhr && (
+            <div>
+              <label className="block text-xs font-bold text-[#1F2933] mb-1">Assigned Class</label>
+              <Select
+                value={currentClassId}
+                onChange={(e) => setCurrentClassId(e.target.value)}
+              >
+                {teacherClasses.map((c) => (
+                  <option key={c} value={c}>
+                    Class {c}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+
           {/* Month Selector */}
           <div>
             <label className="block text-xs font-bold text-[#1F2933] mb-1">Select Month</label>
@@ -280,7 +400,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
         {/* Quick Batch Tools */}
         <div className="flex items-center justify-between text-xs text-[#667085] px-1">
           <span className="font-semibold">
-            {students.length} Students Enrolled • Max working days: {totalWorkingDays}
+            {classStudents.length} Students Enrolled • Max working days: {totalWorkingDays}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -302,18 +422,18 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
         </div>
 
         {/* Students List Table / Cards */}
-        {isLoadingExisting ? (
+        {isLoadingStudents || isLoadingExisting ? (
           <div className="py-12 text-center text-sm text-[#667085]">
             <div className="animate-spin w-6 h-6 border-2 border-[#0F6B50] border-t-transparent rounded-full mx-auto mb-2" />
-            Loading previous records for this month...
+            Loading records for {currentDisplayClassName}...
           </div>
-        ) : students.length === 0 ? (
+        ) : classStudents.length === 0 ? (
           <div className="py-10 text-center text-xs text-[#667085] bg-[#FAF8F2] rounded-xl border border-[#E3EAE6]">
-            No students found in {className}.
+            No students found in {currentDisplayClassName}.
           </div>
         ) : (
           <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1">
-            {students.map((student, index) => {
+            {classStudents.map((student, index) => {
               const attended = studentAttendedMap[student.id] ?? totalWorkingDays;
               const percent = totalWorkingDays > 0 ? Math.round((attended / totalWorkingDays) * 100) : 0;
 
