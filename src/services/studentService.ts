@@ -109,16 +109,21 @@ export const studentService = {
           return [];
         }
 
-        // If specific class requested, filter to that class if assigned
+        // If specific class requested, filter strictly to that class
         if (params?.classId && params.classId !== 'ALL') {
           const cleanRequested = params.classId.replace(/^Class\s*/i, '').trim();
-          if (classList.includes(cleanRequested)) {
-            classList = [cleanRequested];
-          }
+          classList = [cleanRequested || params.classId.trim()];
         }
 
         const responses = await Promise.allSettled(
-          classList.map((cls) => api.get<any>(`/muallim/classes/${cls}/students`))
+          classList.map((cls) =>
+            api.get<any>(`/muallim/classes/${cls}/students`, {
+              params: {
+                ...(params?.page ? { page: params.page } : {}),
+                ...(params?.limit ? { limit: params.limit } : {}),
+              },
+            })
+          )
         );
 
         const studentMap = new Map<string, Student>();
@@ -126,7 +131,9 @@ export const studentService = {
           if (res.status === 'fulfilled') {
             const rawList = Array.isArray(res.value.data)
               ? res.value.data
-              : (res.value.data?.data || []);
+              : Array.isArray(res.value.data?.data)
+              ? res.value.data.data
+              : [];
             if (Array.isArray(rawList)) {
               rawList.forEach((rawStudent: any) => {
                 const mapped = mapBackendStudentToFrontend(rawStudent, classList[idx]);
@@ -137,10 +144,23 @@ export const studentService = {
         });
 
         const combined = Array.from(studentMap.values());
+
+        // Apply frontend class filter as well to ensure students from other classes never leak in
+        if (params?.classId && params.classId !== 'ALL') {
+          const cleanTarget = String(params.classId).replace(/^Class\s*/i, '').trim().toLowerCase();
+          const filtered = combined.filter((s) => {
+            const sClass = String(s.class || '').replace(/^Class\s*/i, '').trim().toLowerCase();
+            const sClassId = String((s as any).classId?._id || (s as any).classId || '').toLowerCase();
+            return sClass === cleanTarget || sClassId === cleanTarget;
+          });
+          return filtered;
+        }
+
         if (combined.length > 0) {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
           return combined;
         }
+        return [];
       } catch (mErr) {
         console.warn("Backend /muallim/classes/:classId/students error:", mErr);
       }

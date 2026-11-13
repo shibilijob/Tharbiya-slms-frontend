@@ -401,6 +401,15 @@ export const AttendanceBatchMarker: React.FC = () => {
       ? `Class ${selectedClass}`
       : `Class ${teacherClasses[0] || ''}`;
 
+  const backlogStudents = React.useMemo(() => {
+    const cleanBacklogClass = String(backlogClassId).replace(/^Class\s*/i, '').trim().toLowerCase();
+    return teacherStudents.filter((s) => {
+      const sClass = String(s.class || '').replace(/^Class\s*/i, '').trim().toLowerCase();
+      const sClassId = String((s as any).classId?._id || (s as any).classId || '').toLowerCase();
+      return sClass === cleanBacklogClass || sClassId === cleanBacklogClass;
+    });
+  }, [teacherStudents, backlogClassId]);
+
   if (isSadhr && !selectedClassId) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Choose a class</h1><p className="mt-2 text-sm text-[#667085]">Open the attendance register from a selected class dashboard.</p><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Go to Class Management</Link></Card>;
   if (isSadhr && selectedClassId && !classAccessLoaded) return <Card className="p-8 text-center">Loading selected class attendance…</Card>;
   if (isSadhr && selectedClassId && classAccessLoaded && !selectedClassAccess) return <Card className="p-8 text-center"><h1 className="text-xl font-extrabold text-[#1F2933]">Class unavailable</h1><Link to="/admin/classes" className="mt-4 inline-flex text-sm font-bold text-[#0F6B50]">Back to Class Management</Link></Card>;
@@ -703,7 +712,9 @@ export const AttendanceBatchMarker: React.FC = () => {
         onClose={() => setIsBacklogModalOpen(false)}
         classId={backlogClassId}
         className={backlogClassName}
-        students={teacherStudents}
+        teacherClasses={teacherClasses}
+        students={backlogStudents}
+        isSadhr={isSadhr}
         onSaved={() => {
           const classesToRefresh = isSadhr
             ? (selectedClassAccess?.id ? [selectedClassAccess.id] : [])
