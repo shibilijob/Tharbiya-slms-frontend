@@ -136,3 +136,48 @@ export function getStatusBadgeClass(status: string): string {
 export function getGradeBadgeClass(grade: string): string {
   return getGradeColor(grade);
 }
+
+/**
+ * Formats fractional leave days into readable fraction notation:
+ * - 0.33 -> ⅓
+ * - 0.67 -> ⅔
+ * - 1.00 -> 1
+ * - 1.33 -> 1⅓
+ * - 1.67 -> 1⅔
+ * - 2.00 -> 2
+ *
+ * @param dayEquivalent Numeric day equivalent (e.g. 0.33, 1.33)
+ * @param shifts Optional integer shift count (where 1 shift = 1/3 day)
+ */
+export function formatLeaveDays(
+  dayEquivalent: number | null | undefined,
+  shifts?: number | null | undefined
+): string {
+  // If exact shift count is provided, use exact integer arithmetic
+  if (shifts !== undefined && shifts !== null && !isNaN(Number(shifts))) {
+    const s = Math.round(Number(shifts));
+    if (s <= 0) return '0';
+    const whole = Math.floor(s / 3);
+    const rem = s % 3;
+
+    if (rem === 1) return whole > 0 ? `${whole}⅓` : '⅓';
+    if (rem === 2) return whole > 0 ? `${whole}⅔` : '⅔';
+    return whole.toString();
+  }
+
+  // Fallback to numeric dayEquivalent value
+  if (dayEquivalent === undefined || dayEquivalent === null || isNaN(Number(dayEquivalent))) {
+    return '0';
+  }
+
+  const val = Number(dayEquivalent);
+  if (val <= 0) return '0';
+
+  const nearestThird = Math.round(val * 3);
+  const whole = Math.floor(nearestThird / 3);
+  const rem = nearestThird % 3;
+
+  if (rem === 1) return whole > 0 ? `${whole}⅓` : '⅓';
+  if (rem === 2) return whole > 0 ? `${whole}⅔` : '⅔';
+  return whole.toString();
+}

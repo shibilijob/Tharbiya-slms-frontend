@@ -326,6 +326,12 @@ export interface MuallimMonthlyStats {
   llpDayEquivalent: number;
   holidayDayEquivalent: number;
   attendancePercentage: number;
+  cumulativeClShifts?: number;
+  cumulativeHplShifts?: number;
+  cumulativeLlpShifts?: number;
+  cumulativeClDayEquivalent?: number;
+  cumulativeHplDayEquivalent?: number;
+  cumulativeLlpDayEquivalent?: number;
 }
 
 export interface MuallimMonthlySummary {
