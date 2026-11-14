@@ -45,6 +45,7 @@ interface DataContextType {
   // Mutations
   addStudent: (data: Omit<Student, 'id'>) => Promise<Student>;
   updateStudent: (id: string, updates: Partial<Student>) => Promise<Student>;
+  updateStudentRollNumber: (id: string, rollNumber: number | null) => Promise<Student>;
   deleteStudent: (id: string) => Promise<boolean>;
   markAttendance: (
     studentId: string,
@@ -334,6 +335,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return useStudentStore.getState().updateStudent(id, updates);
   }, []);
 
+  const updateStudentRollNumber = useCallback(async (id: string, rollNumber: number | null) => {
+    return useStudentStore.getState().updateRollNumber(id, rollNumber);
+  }, []);
+
   const deleteStudent = useCallback(async (id: string) => {
     return useStudentStore.getState().deleteStudent(id);
   }, []);
@@ -416,6 +421,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       getStudentById,
       addStudent,
       updateStudent,
+      updateStudentRollNumber,
       deleteStudent,
       markAttendance,
       batchMarkAttendance,
@@ -447,6 +453,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       getStudentById,
       addStudent,
       updateStudent,
+      updateStudentRollNumber,
       deleteStudent,
       markAttendance,
       batchMarkAttendance,

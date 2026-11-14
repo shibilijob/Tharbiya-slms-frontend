@@ -35,6 +35,7 @@ export type StudentStatus = 'ACTIVE' | 'INACTIVE';
 export interface Student {
   id: string;
   admissionNo: string;
+  rollNumber?: number | null;
   name: string;
   malayalamName?: string;
   gender: Gender;

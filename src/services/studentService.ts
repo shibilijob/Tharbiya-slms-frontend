@@ -33,6 +33,7 @@ export const mapBackendStudentToFrontend = (s: any, fallbackClass?: string | num
   return {
     id: s._id || s.id,
     admissionNo: s.admissionNumber || s.admissionNo || '',
+    rollNumber: typeof s.rollNumber === 'number' ? s.rollNumber : (s.rollNumber ? Number(s.rollNumber) : null),
     name: s.name,
     malayalamName: s.nameMalayalam || s.malayalamName || '',
     gender: s.gender || 'MALE',
@@ -420,6 +421,31 @@ export const studentService = {
 
   async updateStatus(id: string, status: StudentStatus): Promise<Student> {
     return this.update(id, { status });
+  },
+
+  async updateRollNumber(id: string, rollNumber: number | null): Promise<Student> {
+    const res = await api.patch(`/muallim/students/${id}/roll-number`, { rollNumber });
+    const raw = res.data?.data || res.data;
+    if (raw) {
+      const updated = mapBackendStudentToFrontend(raw);
+      try {
+        const cached = localStorage.getItem(STORAGE_KEY);
+        if (cached) {
+          const list: Student[] = JSON.parse(cached);
+          const idx = list.findIndex((s) => s.id === updated.id);
+          if (idx !== -1) {
+            list[idx] = updated;
+          } else {
+            list.unshift(updated);
+          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        }
+      } catch (e) {
+        console.error("Failed to update student in cache:", e);
+      }
+      return updated;
+    }
+    throw new Error("Failed to update roll number");
   },
 
   async downloadAllActiveStudents(): Promise<void> {

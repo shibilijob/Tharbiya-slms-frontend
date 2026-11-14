@@ -15,6 +15,7 @@ interface StudentState {
   fetchStudents: (params?: { page?: number; limit?: number; search?: string; classId?: string; status?: string }) => Promise<Student[]>;
   addStudent: (data: Omit<Student, 'id'>) => Promise<Student>;
   updateStudent: (id: string, updates: Partial<Student>) => Promise<Student>;
+  updateRollNumber: (id: string, rollNumber: number | null) => Promise<Student>;
   deleteStudent: (id: string) => Promise<boolean>;
   getStudentById: (studentId: string) => Student | undefined;
   clearError: () => void;
@@ -105,6 +106,22 @@ export const useStudentStore = create<StudentState>((set, get) => ({
       return updated;
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Failed to update student';
+      set({ error: msg, isLoading: false });
+      throw err;
+    }
+  },
+
+  updateRollNumber: async (id: string, rollNumber: number | null) => {
+    set({ isLoading: true, error: null });
+    try {
+      const updated = await studentService.updateRollNumber(id, rollNumber);
+      set((state) => ({
+        students: state.students.map((s) => (s.id === id ? updated : s)),
+        isLoading: false,
+      }));
+      return updated;
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Failed to update roll number';
       set({ error: msg, isLoading: false });
       throw err;
     }

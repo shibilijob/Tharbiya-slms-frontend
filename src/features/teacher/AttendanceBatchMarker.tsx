@@ -30,6 +30,7 @@ import { api } from '../../lib/axios';
 import { mapBackendStudentToFrontend } from '../../services/studentService';
 import { MonthlyBacklogModal } from './MonthlyBacklogModal';
 import { MonthlyAttendanceReportModal } from './MonthlyAttendanceReportModal';
+import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 
 export const AttendanceBatchMarker: React.FC = () => {
   const { user } = useAuth();
@@ -168,15 +169,18 @@ export const AttendanceBatchMarker: React.FC = () => {
   const canMarkClassHoliday = teacherStudents.length > 0 && Boolean(holidayActionKey);
 
   // Filter based on selected class and search query
-  const filteredStudents = teacherStudents.filter(s => {
-    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-    const fClass = selectedClass.replace(/^Class\s*/i, '').trim();
-    const matchesClass = selectedClass === 'ALL' || sClass === fClass;
-    const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.malayalamName && s.malayalamName.includes(searchQuery));
-    return matchesClass && matchesSearch;
-  });
+  const filteredStudents = React.useMemo(() => {
+    const list = teacherStudents.filter(s => {
+      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+      const fClass = selectedClass.replace(/^Class\s*/i, '').trim();
+      const matchesClass = selectedClass === 'ALL' || sClass === fClass;
+      const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.malayalamName && s.malayalamName.includes(searchQuery));
+      return matchesClass && matchesSearch;
+    });
+    return sortStudentsByRollNumber(list);
+  }, [teacherStudents, selectedClass, searchQuery]);
 
   // Fetch confirmed attendance from MongoDB when date or class changes
   useEffect(() => {

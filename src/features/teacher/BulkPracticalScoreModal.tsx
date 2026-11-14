@@ -13,6 +13,7 @@ import { practicalCriteriaService } from '../../services/practicalCriteriaServic
 import { AkhlaqCategoryMeta } from '../../data/madrasaCurriculum';
 import { api } from '../../lib/axios';
 import { mapBackendStudentToFrontend } from '../../services/studentService';
+import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 import {
   HeartHandshake,
   Save,
@@ -167,16 +168,15 @@ export const BulkPracticalScoreModal: React.FC<BulkPracticalScoreModalProps> = (
   // All active students belonging to the currently selected class
   const allClassStudents = useMemo(() => {
     const targetClass = selectedClass.replace(/^Class\s*/i, '').trim();
-    return students
-      .filter((s) => {
-        const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-        const isActive =
-          !s.status ||
-          String(s.status).toUpperCase() === 'ACTIVE' ||
-          (s as any).isActive !== false;
-        return sClass === targetClass && isActive;
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const filtered = students.filter((s) => {
+      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+      const isActive =
+        !s.status ||
+        String(s.status).toUpperCase() === 'ACTIVE' ||
+        (s as any).isActive !== false;
+      return sClass === targetClass && isActive;
+    });
+    return sortStudentsByRollNumber(filtered);
   }, [students, selectedClass]);
 
   // Students displayed in UI table (filtered by search query if any)

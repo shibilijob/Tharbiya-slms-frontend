@@ -35,10 +35,33 @@ export const TeacherLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const requestedClassId = searchParams.get('classId') || searchParams.get('class') || '';
+  const queryClassId = searchParams.get('classId') || searchParams.get('class') || '';
   const isSadhr = user?.role === 'SADHR_MUALLIM';
+
+  const [storedClassId, setStoredClassId] = useState<string>(() => {
+    if (typeof window !== 'undefined' && isSadhr) {
+      return sessionStorage.getItem('tharbiyah_sadhr_selected_class_id') || '';
+    }
+    return '';
+  });
+
+  React.useEffect(() => {
+    if (!isSadhr) return;
+    if (queryClassId) {
+      sessionStorage.setItem('tharbiyah_sadhr_selected_class_id', queryClassId);
+      setStoredClassId(queryClassId);
+    }
+  }, [isSadhr, queryClassId]);
+
+  const effectiveClassId = isSadhr ? (queryClassId || storedClassId) : '';
   const [classAccessList, setClassAccessList] = useState<ClassAccessItem[]>([]);
-  const selectedClass = isSadhr ? classAccessList.find((item) => item.id === requestedClassId) : undefined;
+  const selectedClass = isSadhr
+    ? classAccessList.find(
+        (item) =>
+          item.id === effectiveClassId ||
+          item.name.replace(/^Class\s*/i, '').trim() === effectiveClassId.replace(/^Class\s*/i, '').trim()
+      )
+    : undefined;
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
 
   const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
@@ -55,7 +78,7 @@ export const TeacherLayout: React.FC = () => {
   }, [user, fetchAssignedClassesForTeacher]);
 
   React.useEffect(() => {
-    if (!isSadhr || !requestedClassId) {
+    if (!isSadhr || !effectiveClassId) {
       setClassAccessList([]);
       return;
     }
@@ -67,15 +90,15 @@ export const TeacherLayout: React.FC = () => {
       if (active) setClassAccessList([]);
     });
     return () => { active = false; };
-  }, [isSadhr, requestedClassId]);
+  }, [isSadhr, effectiveClassId]);
 
-  const selectedClassId = selectedClass?.id || '';
+  const selectedClassId = selectedClass?.id || effectiveClassId;
   const selectedClassName = selectedClass?.name.replace(/^Class\s*/i, '').trim() || '';
   const navPath = (path: string) => {
-    if (!isSadhr || !path.startsWith('/teacher/') || !requestedClassId) return path;
+    if (!isSadhr || !path.startsWith('/teacher/') || !effectiveClassId) return path;
     const [pathname, query = ''] = path.split('?');
     const params = new URLSearchParams(query);
-    params.set('classId', requestedClassId);
+    params.set('classId', effectiveClassId);
     return `${pathname}?${params.toString()}`;
   };
 
@@ -430,7 +453,7 @@ export const TeacherLayout: React.FC = () => {
               {moreMenuItems.map(item => (
                 <Link
                   key={item.path}
-                  to={item.path}
+                  to={navPath(item.path)}
                   onClick={() => setIsMoreSheetOpen(false)}
                   className="flex items-center gap-3 p-3 rounded-2xl bg-[#FAF8F2] hover:bg-[#DDEDE5]/50 border border-[#E3EAE6] text-xs font-bold text-[#1F2933] transition-colors"
                 >

@@ -6,10 +6,12 @@ import { Select } from '../../components/common/Select';
 import { Student } from '../../types';
 import { api } from '../../lib/axios';
 import { Search, Users, CalendarCheck, Loader2 } from 'lucide-react';
+import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 
 export interface MonthlyAttendanceReportRow {
   studentId: string;
   studentName: string;
+  rollNumber?: number | null;
   admissionNo?: string;
   malayalamName?: string;
   present: number;
@@ -215,16 +217,19 @@ export const MonthlyAttendanceReportModal: React.FC<MonthlyAttendanceReportModal
     };
   }, [isOpen, targetClass, selectedYear, selectedMonth, allStudents, students, isSadhr]);
 
-  // Filter rows by search query
+  // Filter rows by search query and sort by roll number ascending
   const filteredRows = useMemo(() => {
-    if (!searchQuery.trim()) return records;
-    const q = searchQuery.toLowerCase().trim();
-    return records.filter(
-      (r) =>
-        r.studentName.toLowerCase().includes(q) ||
-        (r.admissionNo && r.admissionNo.toLowerCase().includes(q)) ||
-        (r.malayalamName && r.malayalamName.toLowerCase().includes(q))
-    );
+    let rows = records;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      rows = records.filter(
+        (r) =>
+          r.studentName.toLowerCase().includes(q) ||
+          (r.admissionNo && r.admissionNo.toLowerCase().includes(q)) ||
+          (r.malayalamName && r.malayalamName.toLowerCase().includes(q))
+      );
+    }
+    return sortStudentsByRollNumber(rows);
   }, [records, searchQuery]);
 
   const selectedMonthName =

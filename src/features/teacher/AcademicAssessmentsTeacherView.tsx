@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -11,7 +11,7 @@ import { Select } from '../../components/common/Select';
 import { Avatar } from '../../components/common/Avatar';
 import { useClassStore, useSubjectStore, useAssessmentStore } from '../../stores';
 import { SubjectMeta, EXAM_TERMS } from '../../data/madrasaCurriculum';
-import { SubjectName, ExamTerm, AcademicAssessment } from '../../types';
+import { SubjectName, ExamTerm, AcademicAssessment, Student } from '../../types';
 import {
   GraduationCap,
   Plus,
@@ -31,6 +31,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { classService, ClassAccessItem } from '../../services/classService';
 import { AssessmentMarkEntryModal } from './AssessmentMarkEntryModal';
 import { calculateGradeFromMarks } from '../../utils/gradeCalculator';
+import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 
 const normalizeClassValue = (value?: string) =>
   String(value || '').replace(/^Class\s*/i, '').trim();
@@ -180,14 +181,17 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   const [modalInitialTerm, setModalInitialTerm] = useState<ExamTerm>('Half Yearly');
 
 
-  // Filter students for marksheet view
-  const filteredStudents = teacherStudents.filter(s => {
-    const matchesClass = !selectedClassFilter || normalizeClassValue(s.class) === normalizeClassValue(selectedClassFilter);
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesClass && matchesSearch;
-  });
+  // Filter students for marksheet view (sorted by Roll Number ascending)
+  const filteredStudents = useMemo(() => {
+    const list = teacherStudents.filter(s => {
+      const matchesClass = !selectedClassFilter || normalizeClassValue(s.class) === normalizeClassValue(selectedClassFilter);
+      const matchesSearch =
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesClass && matchesSearch;
+    });
+    return sortStudentsByRollNumber(list);
+  }, [teacherStudents, selectedClassFilter, searchQuery]);
 
   const handleOpenAddModal = (studentId?: string, _subject?: string, term?: ExamTerm) => {
     const student = studentId ? teacherStudents.find(s => s.id === studentId) || students.find(s => s.id === studentId) : undefined;
@@ -332,7 +336,7 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
           </p>
         </div>
 
-        {filteredStudents.map(student => {
+        {filteredStudents.map((student: Student) => {
           const totals = getStudentTermTotals(student.id);
 
           if (selectedSubject === 'All') {

@@ -9,6 +9,7 @@ import { api } from '../../lib/axios';
 import { useAttendanceStore } from '../../stores/attendanceStore';
 import { useNotifications } from '../../context/NotificationContext';
 import { mapBackendStudentToFrontend } from '../../services/studentService';
+import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 import { Save, CheckCheck, RotateCcw } from 'lucide-react';
 
 interface MonthlyBacklogModalProps {
@@ -115,7 +116,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
         });
 
         if (filtered.length > 0) {
-          setClassStudents(filtered);
+          setClassStudents(sortStudentsByRollNumber(filtered));
         } else {
           // Fallback to prop students strictly filtered by the current classId
           const propFiltered = (students || []).filter((s) => {
@@ -123,7 +124,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
             const sClassId = String((s as any).classId?._id || (s as any).classId || '').toLowerCase();
             return sClass === cleanTarget || sClassId === cleanTarget;
           });
-          setClassStudents(propFiltered);
+          setClassStudents(sortStudentsByRollNumber(propFiltered));
         }
       } catch (err) {
         if (!active) return;
@@ -134,7 +135,7 @@ export const MonthlyBacklogModal: React.FC<MonthlyBacklogModalProps> = ({
           const sClassId = String((s as any).classId?._id || (s as any).classId || '').toLowerCase();
           return sClass === cleanTarget || sClassId === cleanTarget;
         });
-        setClassStudents(propFiltered);
+        setClassStudents(sortStudentsByRollNumber(propFiltered));
       } finally {
         if (active) {
           setIsLoadingStudents(false);
