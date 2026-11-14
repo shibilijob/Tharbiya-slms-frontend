@@ -13,6 +13,7 @@ import { api } from '../../lib/axios';
 import { formatDate } from '../../utils/formatters';
 import { useSearchParams, Link } from 'react-router-dom';
 import { classService, ClassAccessItem } from '../../services/classService';
+import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 
 const today = () => new Date().toISOString().split('T')[0];
 const nextMonth = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -284,12 +285,13 @@ export const QuranHifzTeacherView: React.FC = () => {
 
   const filteredStudents = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    return classStudents.filter((student) => {
+    const list = classStudents.filter((student) => {
       if (!query) return true;
       return [student.name, student.admissionNumber, student.admissionNo, student.malayalamName]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query));
     });
+    return sortStudentsByRollNumber(list);
   }, [classStudents, searchQuery]);
 
   const stats = useMemo(() => {

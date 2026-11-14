@@ -24,6 +24,7 @@ import {
   Download
 } from 'lucide-react';
 import { formatDate } from '../../utils/formatters';
+import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 
 const PAGE_SIZE = 20;
 
@@ -167,17 +168,21 @@ export const StudentManagerView: React.FC = () => {
   const [parentPhoneError, setParentPhoneError] = useState('');
   const [admissionDate, setAdmissionDate] = useState('2022-06-01');
   const [status, setStatus] = useState<StudentStatus>('ACTIVE');
+  const [rollNumberInput, setRollNumberInput] = useState('');
 
-  const filteredStudents = students.filter(s => {
-    const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (s.malayalamName && s.malayalamName.includes(searchQuery));
-    const cleanCls = String(s.class).replace(/^Class\s*/i, '');
-    const filterCls = selectedClass.replace(/^Class\s*/i, '');
-    const matchesClass = selectedClass === 'ALL' || cleanCls === filterCls;
-    const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
-    return matchesSearch && matchesClass && matchesStatus;
-  });
+  const filteredStudents = React.useMemo(() => {
+    const list = students.filter(s => {
+      const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            s.admissionNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (s.malayalamName && s.malayalamName.includes(searchQuery));
+      const cleanCls = String(s.class).replace(/^Class\s*/i, '');
+      const filterCls = selectedClass.replace(/^Class\s*/i, '');
+      const matchesClass = selectedClass === 'ALL' || cleanCls === filterCls;
+      const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
+      return matchesSearch && matchesClass && matchesStatus;
+    });
+    return sortStudentsByRollNumber(list);
+  }, [students, searchQuery, selectedClass, selectedStatus]);
 
   const totalStudents = filteredStudents.length;
   const totalPages = Math.max(1, Math.ceil(totalStudents / PAGE_SIZE));
@@ -229,6 +234,7 @@ export const StudentManagerView: React.FC = () => {
     setParentPhoneError('');
     setAdmissionDate(new Date().toISOString().split('T')[0]);
     setStatus('ACTIVE');
+    setRollNumberInput('');
     setIsModalOpen(true);
   };
 
@@ -257,6 +263,7 @@ export const StudentManagerView: React.FC = () => {
     setParentPhoneError('');
     setAdmissionDate(student.admissionDate || new Date().toISOString().split('T')[0]);
     setStatus(student.status || 'ACTIVE');
+    setRollNumberInput(student.rollNumber !== null && student.rollNumber !== undefined ? String(student.rollNumber) : '');
     setIsModalOpen(true);
   };
 
@@ -364,6 +371,17 @@ export const StudentManagerView: React.FC = () => {
 
     setIsSaving(true);
     try {
+      let parsedRollNumber: number | null = null;
+      if (rollNumberInput.trim()) {
+        const num = Number(rollNumberInput.trim());
+        if (!Number.isInteger(num) || num < 1) {
+          showToast('Roll Number must be a positive whole number');
+          setIsSaving(false);
+          return;
+        }
+        parsedRollNumber = num;
+      }
+
       const parentObj = selectedParent || parentsList.find(p => p.id === parentId);
       const parentName = parentObj?.name || cleanParentName;
       const parentPhone = parentObj?.phone || cleanParentPhone;
@@ -373,6 +391,7 @@ export const StudentManagerView: React.FC = () => {
           name: name.trim(),
           malayalamName: malayalamName.trim(),
           admissionNo: admissionNo.trim(),
+          rollNumber: parsedRollNumber,
           gender,
           dob,
           class: studentClass,
@@ -389,6 +408,7 @@ export const StudentManagerView: React.FC = () => {
           name: name.trim(),
           malayalamName: malayalamName.trim(),
           admissionNo: admissionNo.trim(),
+          rollNumber: parsedRollNumber,
           gender,
           dob,
           class: studentClass,
@@ -733,7 +753,7 @@ export const StudentManagerView: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Select
               label="Class"
               value={studentClass}
@@ -748,6 +768,16 @@ export const StudentManagerView: React.FC = () => {
                 );
               })}
             </Select>
+
+            <Input
+              label="Roll Number (Optional)"
+              type="number"
+              min="1"
+              step="1"
+              placeholder="e.g. 1, 2, 3..."
+              value={rollNumberInput}
+              onChange={(e) => setRollNumberInput(e.target.value)}
+            />
 
             <Select
               label="Status"

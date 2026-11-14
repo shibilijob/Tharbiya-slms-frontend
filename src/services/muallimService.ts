@@ -72,6 +72,11 @@ export const muallimService = {
     return res.data;
   },
 
+  async updateRollNumber(studentId: string, rollNumber: number | null) {
+    const res = await api.patch(`/muallim/students/${studentId}/roll-number`, { rollNumber });
+    return res.data;
+  },
+
   /**
    * Attendance Operations
    */
