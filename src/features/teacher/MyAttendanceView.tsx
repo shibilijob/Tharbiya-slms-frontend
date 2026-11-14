@@ -4,6 +4,7 @@ import { Button } from '../../components/common/Button';
 import { Avatar } from '../../components/common/Avatar';
 import { useNotifications } from '../../context/NotificationContext';
 import { useMyAttendanceStore } from '../../stores/myAttendanceStore';
+import { formatLeaveDays } from '../../utils/formatters';
 import {
   CalendarDays,
   Download,
@@ -254,92 +255,139 @@ export const MyAttendanceView: React.FC = () => {
 
       {/* Monthly Attendance Summary KPI Grid (7 metric cards) */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 items-stretch">
           {/* Scheduled */}
-          <div className="bg-white p-3.5 rounded-2xl border border-[#E3EAE6] text-center shadow-xs">
-            <span className="text-[10px] font-bold text-[#667085] uppercase tracking-wider block">
-              Scheduled
-            </span>
-            <span className="text-lg sm:text-xl font-black text-[#1F2933] mt-1 block">
-              {stats.totalScheduledShifts}
-            </span>
-            <span className="text-[10px] text-[#667085]">Duty shifts</span>
+          <div className="bg-white p-3.5 rounded-2xl border border-[#E3EAE6] text-center shadow-xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-[#667085] uppercase tracking-wider block">
+                Scheduled
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-[#1F2933] mt-1 block">
+                {stats.totalScheduledShifts}
+              </span>
+            </div>
+            <span className="text-[10px] text-[#667085] mt-2 block">Duty shifts</span>
           </div>
 
           {/* Present */}
-          <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200 text-center shadow-xs">
-            <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
-              Present
-            </span>
-            <span className="text-lg sm:text-xl font-black text-emerald-900 mt-1 block">
-              {stats.presentShifts}
-            </span>
-            <span className="text-[10px] text-emerald-700 font-semibold">
+          <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200 text-center shadow-xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
+                Present
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-emerald-900 mt-1 block">
+                {stats.presentShifts}
+              </span>
+            </div>
+            <span className="text-[10px] text-emerald-700 font-semibold mt-2 block">
               {stats.presentDayEquivalent} days
             </span>
           </div>
 
           {/* Casual Leave (CL) */}
-          <div className="bg-blue-50/70 p-3.5 rounded-2xl border border-blue-200 text-center shadow-xs">
-            <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">
-              Casual Leave
-            </span>
-            <span className="text-lg sm:text-xl font-black text-blue-900 mt-1 block">
-              {stats.clShifts}
-            </span>
-            <span className="text-[10px] text-blue-700 font-semibold">
-              {stats.clDayEquivalent} days
-            </span>
+          <div className="bg-blue-50/70 p-3.5 rounded-2xl border border-blue-200 text-center shadow-xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">
+                Casual Leave
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-blue-900 mt-1 block">
+                {formatLeaveDays(stats.clDayEquivalent, stats.clShifts)}
+              </span>
+              <span className="text-[10px] text-blue-700 font-semibold block">
+                This Month
+              </span>
+            </div>
+            <div className="mt-2.5 pt-2 border-t border-blue-200/70">
+              <span className="text-[9px] font-bold text-blue-800/80 uppercase tracking-wider block">
+                Total Till {data?.monthName || 'Month'}
+              </span>
+              <span className="text-xs sm:text-sm font-black text-blue-950 mt-0.5 block">
+                {formatLeaveDays(
+                  stats.cumulativeClDayEquivalent ?? stats.clDayEquivalent,
+                  stats.cumulativeClShifts ?? stats.clShifts
+                )} Days
+              </span>
+            </div>
           </div>
 
           {/* Half Pay Leave (HPL) */}
-          <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200 text-center shadow-xs">
-            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">
-              Half Pay Leave
-            </span>
-            <span className="text-lg sm:text-xl font-black text-amber-900 mt-1 block">
-              {stats.hplShifts}
-            </span>
-            <span className="text-[10px] text-amber-700 font-semibold">
-              {stats.hplDayEquivalent} days
-            </span>
+          <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200 text-center shadow-xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">
+                Half Pay Leave
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-amber-900 mt-1 block">
+                {formatLeaveDays(stats.hplDayEquivalent, stats.hplShifts)}
+              </span>
+              <span className="text-[10px] text-amber-700 font-semibold block">
+                This Month
+              </span>
+            </div>
+            <div className="mt-2.5 pt-2 border-t border-amber-200/70">
+              <span className="text-[9px] font-bold text-amber-800/80 uppercase tracking-wider block">
+                Total Till {data?.monthName || 'Month'}
+              </span>
+              <span className="text-xs sm:text-sm font-black text-amber-950 mt-0.5 block">
+                {formatLeaveDays(
+                  stats.cumulativeHplDayEquivalent ?? stats.hplDayEquivalent,
+                  stats.cumulativeHplShifts ?? stats.hplShifts
+                )} Days
+              </span>
+            </div>
           </div>
 
           {/* Leave W/O Pay (LLP) */}
-          <div className="bg-rose-50/70 p-3.5 rounded-2xl border border-rose-200 text-center shadow-xs">
-            <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">
-              Leave W/O Pay
-            </span>
-            <span className="text-lg sm:text-xl font-black text-rose-900 mt-1 block">
-              {stats.llpShifts}
-            </span>
-            <span className="text-[10px] text-rose-700 font-semibold">
-              {stats.llpDayEquivalent} days
-            </span>
+          <div className="bg-rose-50/70 p-3.5 rounded-2xl border border-rose-200 text-center shadow-xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">
+                Leave W/O Pay
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-rose-900 mt-1 block">
+                {formatLeaveDays(stats.llpDayEquivalent, stats.llpShifts)}
+              </span>
+              <span className="text-[10px] text-rose-700 font-semibold block">
+                This Month
+              </span>
+            </div>
+            <div className="mt-2.5 pt-2 border-t border-rose-200/70">
+              <span className="text-[9px] font-bold text-rose-800/80 uppercase tracking-wider block">
+                Total Till {data?.monthName || 'Month'}
+              </span>
+              <span className="text-xs sm:text-sm font-black text-rose-950 mt-0.5 block">
+                {formatLeaveDays(
+                  stats.cumulativeLlpDayEquivalent ?? stats.llpDayEquivalent,
+                  stats.cumulativeLlpShifts ?? stats.llpShifts
+                )} Days
+              </span>
+            </div>
           </div>
 
           {/* Holiday */}
-          <div className="bg-purple-50/70 p-3.5 rounded-2xl border border-purple-200 text-center shadow-xs">
-            <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">
-              Holiday
-            </span>
-            <span className="text-lg sm:text-xl font-black text-purple-900 mt-1 block">
-              {stats.holidayShifts}
-            </span>
-            <span className="text-[10px] text-purple-700 font-semibold">
+          <div className="bg-purple-50/70 p-3.5 rounded-2xl border border-purple-200 text-center shadow-xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">
+                Holiday
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-purple-900 mt-1 block">
+                {stats.holidayShifts}
+              </span>
+            </div>
+            <span className="text-[10px] text-purple-700 font-semibold mt-2 block">
               {stats.holidayDayEquivalent} days
             </span>
           </div>
 
           {/* Attendance % */}
-          <div className="bg-[#084C3A] text-white p-3.5 rounded-2xl border border-[#0F6B50] text-center col-span-2 sm:col-span-1 shadow-xs">
-            <span className="text-[10px] font-bold text-[#C9A227] uppercase tracking-wider block">
-              Attendance %
-            </span>
-            <span className="text-xl sm:text-2xl font-black text-white mt-1 block">
-              {stats.attendancePercentage}%
-            </span>
-            <span className="text-[10px] text-[#DDEDE5]">Monthly Ratio</span>
+          <div className="bg-[#084C3A] text-white p-3.5 rounded-2xl border border-[#0F6B50] text-center col-span-2 sm:col-span-1 shadow-xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-[#C9A227] uppercase tracking-wider block">
+                Attendance %
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-white mt-1 block">
+                {stats.attendancePercentage}%
+              </span>
+            </div>
+            <span className="text-[10px] text-[#DDEDE5] mt-2 block">Monthly Ratio</span>
           </div>
         </div>
       )}
@@ -428,9 +476,8 @@ export const MyAttendanceView: React.FC = () => {
                   {filteredRecords.map((d, idx) => (
                     <tr
                       key={d.dateStr}
-                      className={`hover:bg-[#FAF8F2] transition-colors ${
-                        idx % 2 === 1 ? 'bg-white' : 'bg-[#FAFCFB]'
-                      }`}
+                      className={`hover:bg-[#FAF8F2] transition-colors ${idx % 2 === 1 ? 'bg-white' : 'bg-[#FAFCFB]'
+                        }`}
                     >
                       {/* Date & Day */}
                       <td className="py-3 px-4 font-bold sticky left-0 bg-inherit z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)]">
