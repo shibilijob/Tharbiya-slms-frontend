@@ -143,10 +143,16 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
   }, [teacherAssignedClasses, teacherUser, students, user]);
 
   // Filter students assigned to teacher's assigned classes
-  const teacherStudents = students.filter(s => {
-    const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
-    return (isSadhr ? selectedClassAccess?.name.replace(/^Class\s*/i, '').trim() === sClass : teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id));
-  });
+  const teacherStudents = useMemo(() => {
+    return students.filter(s => {
+      const sClass = String(s.class).replace(/^Class\s*/i, '').trim();
+      return (
+        isSadhr
+          ? selectedClassAccess?.name.replace(/^Class\s*/i, '').trim() === sClass
+          : teacherClasses.includes(sClass) || (user?.id && s.assignedTeacherId === user.id)
+      );
+    });
+  }, [students, isSadhr, selectedClassAccess, teacherClasses, user?.id]);
 
   // Load subjects for filter view based on selected class
   useEffect(() => {

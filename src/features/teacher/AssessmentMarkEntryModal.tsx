@@ -60,6 +60,10 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
   onSaved,
 }) => {
   const { showToast } = useNotifications();
+  const showToastRef = useRef(showToast);
+  useEffect(() => {
+    showToastRef.current = showToast;
+  }, [showToast]);
 
   // Selection states
   const [selectedClass, setSelectedClass] = useState<string>(
@@ -78,27 +82,47 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
   // Input refs for keyboard navigation (Enter key advances to next subject)
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // Sync initial props whenever modal opens
+  // Track previous isOpen state to only trigger initialization on open transitions
+  const prevIsOpenRef = useRef<boolean>(false);
+
+  // Sync initial props ONLY when modal opens (transition from closed to open)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       let cls = '';
+      const studentIdToSelect = initialStudentId || '';
+
       if (isSadhr) {
         cls = selectedClassAccess?.name.replace(/^Class\s*/i, '').trim() || '';
       } else {
-        const initStudent = initialStudentId ? allStudents.find((s) => s.id === initialStudentId) : null;
+        const initStudent = studentIdToSelect ? allStudents.find((s) => s.id === studentIdToSelect) : null;
         if (initStudent?.class) {
           cls = String(initStudent.class).replace(/^Class\s*/i, '').trim();
         } else {
-          cls = initialClass || (teacherClasses.length > 0 ? teacherClasses[0] : '5');
+          cls = initialClass
+            ? String(initialClass).replace(/^Class\s*/i, '').trim()
+            : (teacherClasses.length > 0 ? teacherClasses[0] : '5');
         }
       }
-      setSelectedClass(cls);
-      setSelectedTerm(initialTerm);
-      if (initialStudentId) {
-        setSelectedStudentId(initialStudentId);
-      }
+
+      const cleanCls = cls.replace(/^Class\s*/i, '').trim();
+      setSelectedClass(cleanCls);
+      setSelectedTerm(initialTerm || 'Half Yearly');
       setStudentSearch('');
+
+      // Find students belonging to this class
+      const studentsForCls = allStudents.filter(
+        (s) => String(s.class).replace(/^Class\s*/i, '').trim() === cleanCls
+      );
+
+      if (studentIdToSelect && studentsForCls.some((s) => s.id === studentIdToSelect)) {
+        setSelectedStudentId(studentIdToSelect);
+      } else if (studentsForCls.length > 0) {
+        setSelectedStudentId(studentsForCls[0].id);
+      } else {
+        setSelectedStudentId(studentIdToSelect || '');
+      }
     }
+    prevIsOpenRef.current = isOpen;
   }, [isOpen, initialClass, initialStudentId, initialTerm, isSadhr, selectedClassAccess, teacherClasses, allStudents]);
 
   // Students eligible for the selected class
@@ -122,37 +146,47 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
     );
   }, [classStudents, studentSearch]);
 
+  // Handler for class dropdown change: updates class and synchronously selects first student of that class
+  const handleClassChange = (newClass: string) => {
+    const cleanClass = String(newClass).replace(/^Class\s*/i, '').trim();
+    setSelectedClass(cleanClass);
+    setStudentSearch('');
+    const newClassStudents = allStudents.filter(
+      (s) => String(s.class).replace(/^Class\s*/i, '').trim() === cleanClass
+    );
+    setSelectedStudentId(newClassStudents.length > 0 ? newClassStudents[0].id : '');
+  };
+
   // If no student is selected or active student changed outside the class, default to first student
   useEffect(() => {
     if (!isOpen) return;
-    const exists = classStudents.some((s) => s.id === selectedStudentId);
-    if (!exists && classStudents.length > 0) {
-      setSelectedStudentId(classStudents[0].id);
-    } else if (classStudents.length === 0) {
+    if (classStudents.length > 0) {
+      const exists = classStudents.some((s) => s.id === selectedStudentId);
+      if (!exists) {
+        setSelectedStudentId(classStudents[0].id);
+      }
+    } else if (selectedStudentId !== '') {
       setSelectedStudentId('');
     }
   }, [classStudents, selectedStudentId, isOpen]);
 
+  // Active student is derived STRICTLY from classStudents matching selectedStudentId
   const activeStudent = useMemo(
-    () => classStudents.find((s) => s.id === selectedStudentId) || allStudents.find((s) => s.id === selectedStudentId) || null,
-    [classStudents, allStudents, selectedStudentId]
+    () => classStudents.find((s) => s.id === selectedStudentId) || null,
+    [classStudents, selectedStudentId]
   );
 
-  // Keep selectedClass synchronized with activeStudent if student belongs to another class
-  useEffect(() => {
-    if (activeStudent?.class) {
-      const cleanClass = String(activeStudent.class).replace(/^Class\s*/i, '').trim();
-      if (cleanClass && cleanClass !== selectedClass) {
-        setSelectedClass(cleanClass);
-      }
-    }
-  }, [activeStudent?.class, selectedClass]);
-
-  // Fetch subjects & existing marks when activeStudent, selectedClass, or selectedTerm changes
+  // Fetch subjects & existing marks when selectedStudentId, selectedClass, or selectedTerm changes
   useEffect(() => {
     if (!isOpen || !selectedStudentId) {
       setSubjects([]);
       setMarkRows({});
+      return;
+    }
+
+    // Guard: Only fetch if selectedStudentId actually belongs to current classStudents
+    const belongs = classStudents.some((s) => s.id === selectedStudentId);
+    if (!belongs) {
       return;
     }
 
@@ -161,7 +195,7 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
 
     const targetClassId = isSadhr && selectedClassAccess?.id
       ? selectedClassAccess.id
-      : (activeStudent?.class ? String(activeStudent.class).replace(/^Class\s*/i, '').trim() : selectedClass);
+      : selectedClass;
 
     assessmentService
       .getStudentMarks(targetClassId, selectedTerm, selectedStudentId)
@@ -209,8 +243,9 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
         setMarkRows(rows);
       })
       .catch((err) => {
+        if (!active) return;
         console.error('Failed to load student assessment marks:', err);
-        showToast('Unable to load subject marks for this student');
+        showToastRef.current('Unable to load subject marks for this student');
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -219,7 +254,7 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
     return () => {
       active = false;
     };
-  }, [isOpen, selectedStudentId, selectedClass, selectedTerm, isSadhr, selectedClassAccess, showToast, activeStudent]);
+  }, [isOpen, selectedStudentId, selectedClass, selectedTerm, isSadhr, selectedClassAccess, classStudents]);
 
   // Live Summary calculation
   const summary = useMemo(() => {
@@ -394,10 +429,7 @@ export const AssessmentMarkEntryModal: React.FC<AssessmentMarkEntryModalProps> =
               <Select
                 label="Class"
                 value={selectedClass}
-                onChange={(e) => {
-                  setSelectedClass(e.target.value);
-                  setSelectedStudentId('');
-                }}
+                onChange={(e) => handleClassChange(e.target.value)}
               >
                 {teacherClasses.map((c) => (
                   <option key={c} value={c}>

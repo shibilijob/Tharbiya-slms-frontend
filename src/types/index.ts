@@ -176,6 +176,7 @@ export interface AkhlaqScore {
   score: number; // e.g. 5, 10, etc.
   maxScore?: number; // e.g. 5, 10, 20, 25, 50, 100
   remarks?: string;
+  practicalSubjectId?: string;
 }
 
 export interface AkhlaqRecord {
@@ -186,6 +187,10 @@ export interface AkhlaqRecord {
   scores: Record<string, AkhlaqScore>;
   teacherRemarks?: string;
   teacherId: string;
+  term?: string;
+  month?: string;
+  year?: number;
+  monthNumber?: number;
 }
 
 export type AchievementCategory =
