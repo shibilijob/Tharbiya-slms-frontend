@@ -28,8 +28,13 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { classService, ClassAccessItem } from '../../services/classService';
 import { api } from '../../lib/axios';
 import { mapBackendStudentToFrontend } from '../../services/studentService';
-import { MonthlyBacklogModal } from './MonthlyBacklogModal';
-import { MonthlyAttendanceReportModal } from './MonthlyAttendanceReportModal';
+// Lazy-loaded modals for Attendance Batch Marker
+const MonthlyBacklogModal = React.lazy(() =>
+  import('./MonthlyBacklogModal').then((m) => ({ default: m.MonthlyBacklogModal }))
+);
+const MonthlyAttendanceReportModal = React.lazy(() =>
+  import('./MonthlyAttendanceReportModal').then((m) => ({ default: m.MonthlyAttendanceReportModal }))
+);
 import { sortStudentsByRollNumber } from '../../utils/studentSorting';
 
 export const AttendanceBatchMarker: React.FC = () => {
@@ -711,36 +716,44 @@ export const AttendanceBatchMarker: React.FC = () => {
         confirmText="Confirm"
         isLoading={isApplyingHoliday}
       />
-      <MonthlyBacklogModal
-        isOpen={isBacklogModalOpen}
-        onClose={() => setIsBacklogModalOpen(false)}
-        classId={backlogClassId}
-        className={backlogClassName}
-        teacherClasses={teacherClasses}
-        students={backlogStudents}
-        isSadhr={isSadhr}
-        onSaved={() => {
-          const classesToRefresh = isSadhr
-            ? (selectedClassAccess?.id ? [selectedClassAccess.id] : [])
-            : selectedClass !== 'ALL'
-              ? [selectedClass]
-              : teacherClasses;
+      {isBacklogModalOpen && (
+        <React.Suspense fallback={null}>
+          <MonthlyBacklogModal
+            isOpen={isBacklogModalOpen}
+            onClose={() => setIsBacklogModalOpen(false)}
+            classId={backlogClassId}
+            className={backlogClassName}
+            teacherClasses={teacherClasses}
+            students={backlogStudents}
+            isSadhr={isSadhr}
+            onSaved={() => {
+              const classesToRefresh = isSadhr
+                ? (selectedClassAccess?.id ? [selectedClassAccess.id] : [])
+                : selectedClass !== 'ALL'
+                  ? [selectedClass]
+                  : teacherClasses;
 
-          classesToRefresh.forEach((clsId) => {
-            fetchClassAttendanceStats(clsId, selectedDate);
-          });
-        }}
-      />
-      <MonthlyAttendanceReportModal
-        isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        classId={backlogClassId}
-        className={backlogClassName}
-        teacherClasses={teacherClasses}
-        students={teacherStudents}
-        allStudents={sourceStudents}
-        isSadhr={isSadhr}
-      />
+              classesToRefresh.forEach((clsId) => {
+                fetchClassAttendanceStats(clsId, selectedDate);
+              });
+            }}
+          />
+        </React.Suspense>
+      )}
+      {isReportModalOpen && (
+        <React.Suspense fallback={null}>
+          <MonthlyAttendanceReportModal
+            isOpen={isReportModalOpen}
+            onClose={() => setIsReportModalOpen(false)}
+            classId={backlogClassId}
+            className={backlogClassName}
+            teacherClasses={teacherClasses}
+            students={teacherStudents}
+            allStudents={sourceStudents}
+            isSadhr={isSadhr}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

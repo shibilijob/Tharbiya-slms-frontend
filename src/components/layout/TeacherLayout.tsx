@@ -21,9 +21,18 @@ import {
 import { clsx } from 'clsx';
 import { Toast } from '../feedback/Toast';
 import { Logo } from '../common/Logo';
-import { UpdateTimetableModal } from '../../features/teacher/UpdateTimetableModal';
-import { UpdateSubjectsModal } from '../../features/teacher/UpdateSubjectsModal';
-import { BulkPracticalScoreModal } from '../../features/teacher/BulkPracticalScoreModal';
+import { PageLoadingFallback } from '../common/LoadingFallback';
+
+// Lazy-loaded global teacher modals (downloaded only upon opening)
+const UpdateTimetableModal = React.lazy(() =>
+  import('../../features/teacher/UpdateTimetableModal').then((m) => ({ default: m.UpdateTimetableModal }))
+);
+const UpdateSubjectsModal = React.lazy(() =>
+  import('../../features/teacher/UpdateSubjectsModal').then((m) => ({ default: m.UpdateSubjectsModal }))
+);
+const BulkPracticalScoreModal = React.lazy(() =>
+  import('../../features/teacher/BulkPracticalScoreModal').then((m) => ({ default: m.BulkPracticalScoreModal }))
+);
 
 import { useData } from '../../context/DataContext';
 import { useClassStore } from '../../stores';
@@ -331,7 +340,9 @@ export const TeacherLayout: React.FC = () => {
 
           {/* Main Content Area */}
           <main className="lg:col-span-9 safe-bottom-padding lg:pb-8">
-            <Outlet />
+            <React.Suspense fallback={<PageLoadingFallback />}>
+              <Outlet />
+            </React.Suspense>
           </main>
         </div>
       </div>
@@ -481,30 +492,42 @@ export const TeacherLayout: React.FC = () => {
         </div>
       )}
 
-      {/* Global Modals for Teacher Portal */}
-      <UpdateTimetableModal
-        isOpen={isTimetableModalOpen}
-        onClose={() => setIsTimetableModalOpen(false)}
-        assignedClasses={scopedTeacherClasses}
-        initialClass={selectedClassName || scopedTeacherClasses[0]}
-      />
+      {/* Global Modals for Teacher Portal (Mounted & downloaded on demand) */}
+      {isTimetableModalOpen && (
+        <React.Suspense fallback={null}>
+          <UpdateTimetableModal
+            isOpen={isTimetableModalOpen}
+            onClose={() => setIsTimetableModalOpen(false)}
+            assignedClasses={scopedTeacherClasses}
+            initialClass={selectedClassName || scopedTeacherClasses[0]}
+          />
+        </React.Suspense>
+      )}
 
-      <UpdateSubjectsModal
-        isOpen={isSubjectsModalOpen}
-        onClose={() => setIsSubjectsModalOpen(false)}
-        assignedClasses={scopedTeacherClasses}
-        initialClass={selectedClassName || scopedTeacherClasses[0]}
-      />
+      {isSubjectsModalOpen && (
+        <React.Suspense fallback={null}>
+          <UpdateSubjectsModal
+            isOpen={isSubjectsModalOpen}
+            onClose={() => setIsSubjectsModalOpen(false)}
+            assignedClasses={scopedTeacherClasses}
+            initialClass={selectedClassName || scopedTeacherClasses[0]}
+          />
+        </React.Suspense>
+      )}
 
-      <BulkPracticalScoreModal
-        isOpen={isPracticalScoreModalOpen}
-        onClose={() => setIsPracticalScoreModalOpen(false)}
-        selectedClassId={isSadhr ? selectedClassId : undefined}
-        assignedClasses={scopedTeacherClasses}
-        initialClass={selectedClassName || scopedTeacherClasses[0]}
-        isSadhr={isSadhr}
-        selectedClassAccess={selectedClass}
-      />
+      {isPracticalScoreModalOpen && (
+        <React.Suspense fallback={null}>
+          <BulkPracticalScoreModal
+            isOpen={isPracticalScoreModalOpen}
+            onClose={() => setIsPracticalScoreModalOpen(false)}
+            selectedClassId={isSadhr ? selectedClassId : undefined}
+            assignedClasses={scopedTeacherClasses}
+            initialClass={selectedClassName || scopedTeacherClasses[0]}
+            isSadhr={isSadhr}
+            selectedClassAccess={selectedClass}
+          />
+        </React.Suspense>
+      )}
 
       <Toast />
     </div>

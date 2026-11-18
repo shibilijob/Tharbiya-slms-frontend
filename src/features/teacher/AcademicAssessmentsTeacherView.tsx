@@ -29,9 +29,13 @@ import {
 import { formatDate, getGradeBadgeClass } from '../../utils/formatters';
 import { Link, useSearchParams } from 'react-router-dom';
 import { classService, ClassAccessItem } from '../../services/classService';
-import { AssessmentMarkEntryModal } from './AssessmentMarkEntryModal';
 import { calculateGradeFromMarks } from '../../utils/gradeCalculator';
 import { sortStudentsByRollNumber } from '../../utils/studentSorting';
+
+// Lazy-loaded modal for Assessment Mark Entry (downloaded on demand)
+const AssessmentMarkEntryModal = React.lazy(() =>
+  import('./AssessmentMarkEntryModal').then((m) => ({ default: m.AssessmentMarkEntryModal }))
+);
 
 const normalizeClassValue = (value?: string) =>
   String(value || '').replace(/^Class\s*/i, '').trim();
@@ -527,19 +531,23 @@ export const AcademicAssessmentsTeacherView: React.FC = () => {
         })}
       </div>
 
-      {/* Multi-Subject Mark Entry Modal for Single Student */}
-      <AssessmentMarkEntryModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        initialClass={modalInitialClass}
-        initialStudentId={modalInitialStudentId}
-        initialTerm={modalInitialTerm}
-        teacherClasses={teacherClasses}
-        allStudents={teacherStudents}
-        isSadhr={isSadhr}
-        selectedClassAccess={selectedClassAccess}
-        onSaved={handleModalSaved}
-      />
+      {/* Multi-Subject Mark Entry Modal for Single Student (Loaded on demand) */}
+      {isModalOpen && (
+        <React.Suspense fallback={null}>
+          <AssessmentMarkEntryModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            initialClass={modalInitialClass}
+            initialStudentId={modalInitialStudentId}
+            initialTerm={modalInitialTerm}
+            teacherClasses={teacherClasses}
+            allStudents={teacherStudents}
+            isSadhr={isSadhr}
+            selectedClassAccess={selectedClassAccess}
+            onSaved={handleModalSaved}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

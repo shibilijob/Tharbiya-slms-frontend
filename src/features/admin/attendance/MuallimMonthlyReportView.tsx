@@ -5,7 +5,11 @@ import { Avatar } from '../../../components/common/Avatar';
 import { useNotifications } from '../../../context/NotificationContext';
 import { useMuallimAttendanceStore } from '../../../stores/muallimAttendanceStore';
 import { MuallimMonthlySummary } from '../../../types';
-import { MuallimMonthlyDetailModal } from './MuallimMonthlyDetailModal';
+
+// Lazy-loaded modal for detailed monthly breakdown
+const MuallimMonthlyDetailModal = React.lazy(() =>
+  import('./MuallimMonthlyDetailModal').then((m) => ({ default: m.MuallimMonthlyDetailModal }))
+);
 import {
   Calendar,
   Download,
@@ -504,16 +508,20 @@ export const MuallimMonthlyReportView: React.FC = () => {
         )}
       </Card>
 
-      {/* Individual Muallim Monthly Detail Modal */}
-      <MuallimMonthlyDetailModal
-        isOpen={isDetailModalOpen}
-        onClose={() => setIsDetailModalOpen(false)}
-        summary={selectedMuallimDetail}
-        year={selectedYear}
-        month={selectedMonth}
-        monthName={monthlyReport?.monthName || `Month ${selectedMonth}`}
-        onSaved={() => fetchMonthlyReport(selectedYear, selectedMonth)}
-      />
+      {/* Individual Muallim Monthly Detail Modal (Loaded on demand) */}
+      {isDetailModalOpen && (
+        <React.Suspense fallback={null}>
+          <MuallimMonthlyDetailModal
+            isOpen={isDetailModalOpen}
+            onClose={() => setIsDetailModalOpen(false)}
+            summary={selectedMuallimDetail}
+            year={selectedYear}
+            month={selectedMonth}
+            monthName={monthlyReport?.monthName || `Month ${selectedMonth}`}
+            onSaved={() => fetchMonthlyReport(selectedYear, selectedMonth)}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

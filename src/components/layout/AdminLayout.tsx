@@ -18,6 +18,7 @@ import {
 import { clsx } from 'clsx';
 import { Toast } from '../feedback/Toast';
 import { Logo } from '../common/Logo';
+import { PageLoadingFallback } from '../common/LoadingFallback';
 
 export const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -167,7 +168,9 @@ export const AdminLayout: React.FC = () => {
 
           {/* Admin Content Area */}
           <main className="lg:col-span-9 safe-bottom-padding lg:pb-8">
-            <Outlet />
+            <React.Suspense fallback={<PageLoadingFallback />}>
+              <Outlet />
+            </React.Suspense>
           </main>
         </div>
       </div>
