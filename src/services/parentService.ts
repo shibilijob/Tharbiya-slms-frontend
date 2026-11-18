@@ -134,6 +134,7 @@ export interface ChildPracticalResponse {
     recentEvaluations: any[];
   };
   evaluations: any[];
+  monthlyScores?: any[];
 }
 
 export interface ChildTimetableResponse {

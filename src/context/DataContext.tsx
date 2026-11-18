@@ -98,11 +98,12 @@ const mapParentHifzToQuranProgress = (data: ChildHifzResponse): QuranProgress =>
   };
 };
 
-const mapParentPracticalToAkhlaq = (data: ChildPracticalResponse): AkhlaqRecord | null => {
-  const latest = data.evaluations?.[0] || data.report?.recentEvaluations?.[0];
-  if (!latest && (!data.report || data.report.totalEvaluations === 0)) return null;
-
-  const scores = (latest?.scores || []).reduce((acc: Record<string, any>, item: any) => {
+const mapSingleEvaluationToAkhlaq = (
+  ev: any,
+  studentId: string,
+  reportAverage?: number
+): AkhlaqRecord => {
+  const scores = (ev?.scores || []).reduce((acc: Record<string, any>, item: any) => {
     const key = item.category || item.subjectName || item.practicalSubjectId || 'Practical';
     const scoreVal = typeof item.score === 'number' ? item.score : 0;
     const maxScoreVal = typeof item.maxScore === 'number' && item.maxScore > 0 ? item.maxScore : 5;
@@ -125,6 +126,7 @@ const mapParentPracticalToAkhlaq = (data: ChildPracticalResponse): AkhlaqRecord 
       score: scoreVal,
       maxScore: maxScoreVal,
       remarks: item.remarks || '',
+      practicalSubjectId: item.practicalSubjectId || '',
     };
 
     acc[key] = scoreData;
@@ -134,17 +136,37 @@ const mapParentPracticalToAkhlaq = (data: ChildPracticalResponse): AkhlaqRecord 
     return acc;
   }, {});
 
+  const evDate = ev?.date ? new Date(ev.date).toISOString().split('T')[0] : '';
+  const monthKey = ev?.month || (evDate ? evDate.slice(0, 7) : '');
+
   return {
-    id: latest?._id?.toString?.() || latest?.id || `practical-${data.studentId}`,
-    studentId: String(data.studentId),
-    evaluatedDate: latest?.date ? new Date(latest.date).toISOString().split('T')[0] : '',
-    overallScore: typeof data.report?.averageScore === 'number' && data.report.averageScore > 0
-      ? data.report.averageScore
-      : (latest?.overallScore || 0),
+    id: ev?._id?.toString?.() || ev?.id || `practical-${studentId}-${monthKey || Math.random()}`,
+    studentId: String(studentId),
+    evaluatedDate: evDate,
+    overallScore: typeof ev?.overallScore === 'number'
+      ? ev.overallScore
+      : (typeof reportAverage === 'number' && reportAverage > 0 ? reportAverage : 0),
     scores,
-    teacherRemarks: latest?.overallRemarks || '',
-    teacherId: latest?.evaluatedById?._id || latest?.evaluatedById || '',
+    teacherRemarks: ev?.overallRemarks || '',
+    teacherId: ev?.evaluatedById?._id || ev?.evaluatedById?.name || '',
+    term: ev?.term || monthKey || 'Monthly Practical',
+    month: monthKey,
+    year: ev?.year,
+    monthNumber: ev?.monthNumber,
   };
+};
+
+const mapParentPracticalToAkhlaqRecords = (data: ChildPracticalResponse): AkhlaqRecord[] => {
+  if (!data) return [];
+  const evList = Array.isArray(data.evaluations) && data.evaluations.length > 0
+    ? data.evaluations
+    : (Array.isArray(data.report?.recentEvaluations) ? data.report.recentEvaluations : []);
+
+  if (evList.length === 0) return [];
+
+  return evList.map((ev) =>
+    mapSingleEvaluationToAkhlaq(ev, data.studentId, data.report?.averageScore)
+  );
 };
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -218,9 +240,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
 
         const parentPractical = practicalResults.flatMap((result) => {
-          if (result.status !== 'fulfilled') return [];
-          const mapped = mapParentPracticalToAkhlaq(result.value);
-          return mapped ? [mapped] : [];
+          if (result.status !== 'fulfilled' || !result.value) return [];
+          return mapParentPracticalToAkhlaqRecords(result.value);
         });
 
         const parentBacklogs = attendanceResults.flatMap((result) => {
