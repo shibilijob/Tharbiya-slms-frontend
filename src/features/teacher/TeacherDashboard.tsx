@@ -7,9 +7,16 @@ import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
 import { Avatar } from '../../components/common/Avatar';
 import { StatCard } from '../../components/common/StatCard';
-import { UpdateTimetableModal } from './UpdateTimetableModal';
-import { UpdateSubjectsModal } from './UpdateSubjectsModal';
-import { BulkPracticalScoreModal } from './BulkPracticalScoreModal';
+// Lazy-loaded modals for Teacher Dashboard
+const UpdateTimetableModal = React.lazy(() =>
+  import('./UpdateTimetableModal').then((m) => ({ default: m.UpdateTimetableModal }))
+);
+const UpdateSubjectsModal = React.lazy(() =>
+  import('./UpdateSubjectsModal').then((m) => ({ default: m.UpdateSubjectsModal }))
+);
+const BulkPracticalScoreModal = React.lazy(() =>
+  import('./BulkPracticalScoreModal').then((m) => ({ default: m.BulkPracticalScoreModal }))
+);
 import { muallimService } from '../../services/muallimService';
 import { timetableService } from '../../services/timetableService';
 import { subjectService } from '../../services/subjectService';
@@ -706,34 +713,46 @@ export const TeacherDashboard: React.FC = () => {
         </div>
       </Card>
 
-      {/* Timetable Modal */}
-      <UpdateTimetableModal
-        isOpen={isTimetableModalOpen}
-        onClose={() => setIsTimetableModalOpen(false)}
-        initialClass={dashboardClass}
-        assignedClasses={dashboardClasses}
-        onUpdated={() => { void refreshDashboardClass(); }}
-      />
+      {/* Timetable Modal (Loaded on demand) */}
+      {isTimetableModalOpen && (
+        <React.Suspense fallback={null}>
+          <UpdateTimetableModal
+            isOpen={isTimetableModalOpen}
+            onClose={() => setIsTimetableModalOpen(false)}
+            initialClass={dashboardClass}
+            assignedClasses={dashboardClasses}
+            onUpdated={() => { void refreshDashboardClass(); }}
+          />
+        </React.Suspense>
+      )}
 
-      {/* Subjects Modal */}
-      <UpdateSubjectsModal
-        isOpen={isSubjectsModalOpen}
-        onClose={() => setIsSubjectsModalOpen(false)}
-        initialClass={dashboardClass}
-        assignedClasses={dashboardClasses}
-        onUpdated={() => { void refreshDashboardClass(); }}
-      />
+      {/* Subjects Modal (Loaded on demand) */}
+      {isSubjectsModalOpen && (
+        <React.Suspense fallback={null}>
+          <UpdateSubjectsModal
+            isOpen={isSubjectsModalOpen}
+            onClose={() => setIsSubjectsModalOpen(false)}
+            initialClass={dashboardClass}
+            assignedClasses={dashboardClasses}
+            onUpdated={() => { void refreshDashboardClass(); }}
+          />
+        </React.Suspense>
+      )}
 
-      {/* Practical Score Modal */}
-      <BulkPracticalScoreModal
-        isOpen={isPracticalScoreModalOpen}
-        onClose={() => setIsPracticalScoreModalOpen(false)}
-        selectedClassId={isSadhr ? selectedClassContextId : undefined}
-        assignedClasses={teacherClasses}
-        initialClass={dashboardClass || teacherClasses[0]}
-        isSadhr={isSadhr}
-        selectedClassAccess={selectedClassItem}
-      />
+      {/* Practical Score Modal (Loaded on demand) */}
+      {isPracticalScoreModalOpen && (
+        <React.Suspense fallback={null}>
+          <BulkPracticalScoreModal
+            isOpen={isPracticalScoreModalOpen}
+            onClose={() => setIsPracticalScoreModalOpen(false)}
+            selectedClassId={isSadhr ? selectedClassContextId : undefined}
+            assignedClasses={teacherClasses}
+            initialClass={dashboardClass || teacherClasses[0]}
+            isSadhr={isSadhr}
+            selectedClassAccess={selectedClassItem}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

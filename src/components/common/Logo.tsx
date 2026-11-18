@@ -58,6 +58,9 @@ export const Logo: React.FC<LogoProps> = ({
         <img
           src={logoImg}
           alt="Darunnajath Madrasa Mundambra Logo"
+          width="48"
+          height="48"
+          decoding="async"
           className="w-full h-full object-contain rounded-full"
           loading="eager"
         />
